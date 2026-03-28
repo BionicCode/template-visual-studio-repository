@@ -1,4 +1,4 @@
-# AGENTS.md
+# copilot-instructions.md
 
 <!--
 Shared baseline instructions for repositories using coding agents.
