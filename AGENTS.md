@@ -61,6 +61,7 @@ In implementation mode:
 - Respect the existing repository layout before introducing new folders.
 - Keep production code in the repository's established source locations.
 - Place automated test projects under a top-level `test/` directory in the repository root.
+- Place documentation files projects under a top-level `documentation/` directory in the repository root.
 - If `test/` does not exist and tests are needed, create it at the repository root.
 - Name a generated unit test project `<SolutionName>.Tests`.
 - If the repository contains multiple solution files, use the solution that owns the code being changed. If that ownership is still ambiguous, state the assumption you used.
@@ -93,9 +94,12 @@ That means:
 - Add meaningful code comments where names alone are not enough to explain intent, invariants, trade-offs, caveats, failure modes, unsupported scenarios, or non-obvious behavior.
 - Do not add comments that merely restate the code.
 - Use XML or language-native API documentation comments for public or externally consumed APIs when the repository already uses them, or when you introduce or significantly change public surface area.
+- Use proper XML documentation tags and language-aware markup such as `<see cref="..."/>` and `<see langword="null"/>` where appropriate.
 - Use correct documentation syntax and language-aware markup where supported.
-- If a change introduces non-obvious API usage, data structures, workflow expectations, or extension points, add or update a small Markdown document in the repository's preferred documentation location.
+- If a change introduces non-obvious API usage, data structures, workflow expectations, or extension points, add or update a small Markdown document in the repository's preferred documentation location as described in the [File System and Project Structure](#file-system-and-project-structure) section.
 - Keep documentation aligned with implemented behavior; stale documentation is a defect.
+  
+Follow the detailed documentation rules in `DOCUMENTATION.md` when that file exists.
 
 ## Default Review Mission
 Goal: perform a deep, evidence-based code review focused on correctness, behavioral risk, contract mismatches, and maintainability.
