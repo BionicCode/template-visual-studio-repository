@@ -60,8 +60,8 @@ In implementation mode:
 ## File System and Project Structure
 - Respect the existing repository layout before introducing new folders.
 - Keep production code in the repository's established source locations.
-- Place automated test projects under a top-level `test/` directory in the repository root.
 - Place documentation files projects under a top-level `documentation/` directory in the repository root.
+- Place automated test projects under a top-level `test/` directory in the repository root.
 - If `test/` does not exist and tests are needed, create it at the repository root.
 - Name a generated unit test project `<SolutionName>.Tests`.
 - If the repository contains multiple solution files, use the solution that owns the code being changed. If that ownership is still ambiguous, state the assumption you used.
