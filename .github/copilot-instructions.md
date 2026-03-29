@@ -7,7 +7,7 @@ Repository owners may customize only the final "Repository Specifics" section.
 Recommended CI approach: protect all content above the repository-specific marker.
 -->
 
-Follow the repository-wide engineering and validation standards defined in the root [AGENTS.md](../AGENTS.md) and any more specific AGENTS.md files that apply to the current path.
+Follow the repository-wide engineering and validation standards defined in the root [AGENTS.md](../AGENTS.md) and any more specific AGENTS.md files that apply to the current path. The current file is based on that AGENTS.md at repository root and may get outdated. Any AGENTS.md along the working path is the source of truth.
 
 ## Scope and Precedence
 - This file defines repository-wide agent guidance.
