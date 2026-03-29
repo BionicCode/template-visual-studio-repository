@@ -65,7 +65,6 @@ In implementation mode:
 ## File System and Project Structure
 - Respect the existing repository layout before introducing new folders.
 - Keep production code in the repository's established source locations.
-- Place documentation files projects under a top-level `documentation/` directory in the repository root.
 - Place automated test projects under a top-level `test/` directory in the repository root.
 - If `test/` does not exist and tests are needed, create it at the repository root.
 - Name a generated unit test project `<SolutionName>.Tests`.
@@ -100,12 +99,9 @@ That means:
 - Prefer improving structure and naming before adding explanatory comments that compensate for avoidably unclear code.
 - Do not add comments that merely restate the code.
 - Use XML or language-native API documentation comments for public or externally consumed APIs when the repository already uses them, or when you introduce or significantly change public surface area.
-- Use proper XML documentation tags and language-aware markup such as `<see cref="..."/>` and `<see langword="null"/>` where appropriate.
 - Use correct documentation syntax and language-aware markup where supported.
-- If a change introduces non-obvious API usage, data structures, workflow expectations, or extension points, add or update a small Markdown document in the repository's preferred documentation locationas described in the [File System and Project Structure](#file-system-and-project-structure) section.
+- If a change introduces non-obvious API usage, data structures, workflow expectations, or extension points, add or update a small Markdown document in the repository's preferred documentation location.
 - Keep documentation aligned with implemented behavior; stale documentation is a defect.
-  
-Follow the detailed documentation rules in `DOCUMENTATION.md` when that file exists.
 
 ## Default Review Mission
 Goal: perform a deep, evidence-based code review focused on correctness, behavioral risk, contract mismatches, and maintainability.
@@ -208,7 +204,7 @@ Fill in or edit this section per repository. Everything above this section is in
 - Source root(s): `src/`
 - Test root: `test/`
 - Unit test project name: `<SolutionName>.Tests`
-- Documentation location: `docs/` or repository root, as preferred by this repository
+- Documentation location: `docs/`
 
 ## Build and Validation
 - Preferred restore command: `<fill me>`
@@ -221,7 +217,7 @@ Fill in or edit this section per repository. Everything above this section is in
 - Preferred frameworks, languages, or libraries: `<fill me>`
 - Naming conventions beyond language defaults: `<fill me>`
 - Commit / PR conventions: `<fill me>`
-- Documentation-specific expectations: `<optional>`
+- Documentation-specific expectations: `See DOCUMENTATION.md if present.`
 - Any allowed exceptions to the shared rules above: `<fill me>`
 
 ## Optional Specialized Instruction Files
