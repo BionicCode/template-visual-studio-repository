@@ -1,6 +1,6 @@
 # dotnet.instructions.md
 
-See [AGENTS.md](#src/AGENTS.md) for further .NET specific instructions. That AGENTS.md file will have precedence over this current file which can be outdated.
+See [AGENTS.md](../../src/AGENTS.md]) for further .NET specific instructions. That AGENTS.md file will have precedence over this current file which can be outdated.
 
 ## Scope
 These instructions apply to .NET / Visual Studio work in this subtree.
