@@ -1,4 +1,4 @@
-# AGENTS.md
+# AGENTS.md (Version 1)
 
 <!--
 Shared baseline instructions for repositories using coding agents.
