@@ -1,6 +1,6 @@
 # copilot-instructions.md
 
-Follow the repository-wide engineering and validation standards defined in the root [AGENTS.md](../AGENTS.md) and any more specific AGENTS.md files that apply to the current path. The current file is based on that AGENTS.md at repository root and may get outdated. Any AGENTS.md along the working path is the source of truth.
+Follow the repository-wide engineering and validation standards defined in the root [AGENTS.md](../AGENTS.md) and any more specific AGENTS.md files that apply to the current path. The current file is based on that AGENTS.md at repository root and may get outdated. Any AGENTS.md along the working path is the source of truth. If a referenced AGENTS.md file cannot be located or read, state that it was not found and fall back to the rules in this file. Do not infer or assume its contents.
 
 <!--
 Shared baseline instructions for repositories using coding agents.
@@ -10,6 +10,12 @@ Recommended CI approach: protect all content above the repository-specific marke
 -->
 
 ## Scope and Precedence
+
+1. User prompt instructions (highest). 
+2. AGENTS.md or AGENTS.override.md in the deepest applicable directory. 
+3. Root AGENTS.md.
+4. This file (lowest). 
+
 - This file defines repository-wide agent guidance.
 - User instructions override this file.
 - More specific `AGENTS.md` or `AGENTS.override.md` files in deeper directories may refine or override repository-level guidance.
