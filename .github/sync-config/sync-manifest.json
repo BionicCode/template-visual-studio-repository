@@ -11,6 +11,26 @@
       "lifecycle_policy": "seed_once",
       "uniqueness_policy": "none",
       "managed_scope": "whole_file"
+    },
+    {
+      "source_repo": "BionicCode/bioniccode-code-style",
+      "source_ref": "main",
+      "source_path": ".editorconfig",
+      "target_path": ".editorconfig",
+      "direction": "source_to_target",
+      "lifecycle_policy": "enforce",
+      "uniqueness_policy": "none",
+      "managed_scope": "whole_file"
+    },
+    {
+      "source_repo": "BionicCode/bioniccode-code-style",
+      "source_ref": "main",
+      "source_path": "Directory.Build.props",
+      "target_path": "Directory.Build.props",
+      "direction": "source_to_target",
+      "lifecycle_policy": "enforce",
+      "uniqueness_policy": "none",
+      "managed_scope": "whole_file"
     }
   ]
 }
