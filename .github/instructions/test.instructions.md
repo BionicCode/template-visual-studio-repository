@@ -18,3 +18,7 @@ Key rules:
 - Do not hide scenarios behind excessive test helper indirection.
 - Keep Arrange, Act, Assert structure clear.
 - When this Copilot surface supports agent instructions, also follow /test/AGENTS.md.
+
+<!-- BEGIN REPOSITORY SPECIFICS: repository owners may edit only this section -->
+
+<!-- END REPOSITORY SPECIFICS -->
