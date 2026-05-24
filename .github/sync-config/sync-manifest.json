@@ -5,8 +5,22 @@
     {
       "source_repo": "BionicCode/workflows",
       "source_ref": "main",
-      "source_path": ".github/scripts/sync-files-from-manifest/documentation/**/*.*",
-      "target_path": ".github/sync-config/documentation",
+      "source_glob": ".github/scripts/sync-files-from-manifest/documentation/**/*.*",
+      "target_directory": ".github/sync-config/documentation",
+      "direction": "source_to_target",
+      "lifecycle_policy": "enforce",
+      "uniqueness_policy": "none",
+      "managed_scope": "outside_markers",
+      "markers": {
+        "start": "<!-- BEGIN REPOSITORY SPECIFICS -->",
+        "end": "<!-- END REPOSITORY SPECIFICS -->"
+      }
+    },
+    {
+      "source_repo": "BionicCode/workflows",
+      "source_ref": "main",
+      "source_path": ".github/scripts/sync-files-from-manifest/schemasync-manifest.schema.json",
+      "target_directory": ".github/scripts/sync-files-from-manifest/",
       "direction": "source_to_target",
       "lifecycle_policy": "enforce",
       "uniqueness_policy": "none",
