@@ -28,6 +28,18 @@ The reusable workflow reads the manifest, validates it against the schema bundle
 - Timestamp or newer-wins conflict resolution is not part of the current workflow behavior.
 - Large binary assets are outside the intended use case.
 
+## Feature Support Matrix
+
+| Feature | Schema-valid | Runtime-supported | Notes |
+|---|---:|---:|---|
+| `source_to_target` + `whole_file` | Yes | Yes | Byte-for-byte source-to-target sync. |
+| `source_to_target` + `outside_markers` | Yes | Yes | Source owns outside content; target inner content is preserved or fully omitted by projection. |
+| `source_to_target` + `inside_markers` | Yes | Yes | Source inner content is enforced by occurrence order. |
+| `target_to_source` | Yes | No | Rejected by current execution rules. |
+| `two_way` | Yes | No | Rejected by current execution rules. |
+| Directory or glob sync | No | No | Use explicit one-to-one entries. |
+| Delete unmatched targets | No | No | Extra files are not deleted automatically. |
+
 ## Complete Shape
 
 This example shows the complete manifest structure, including the conditional `markers` child object. A real entry uses either `managed_scope: "whole_file"` without `markers`, or a marker-scoped value with `markers`.
@@ -94,9 +106,24 @@ Each entry is a strict one-to-one mapping and is valid only as an item of `Manif
 | `managed_scope` | Yes | [`ManagedScope`](types/managed-scope.md) | Entry scalar | Portion of the target file managed by the workflow. |
 | `markers` | Conditional | [`Markers`](types/markers.md) | Nested child object | Required for marker-scoped entries and forbidden for `whole_file`. |
 
-## Marker-Scoped Examples
+## Examples
 
-`inside_markers` lets the source own content inside each marker block while the target owns all outside content:
+`whole_file` lets the source own the entire target file. It is byte-for-byte behavior and can be used for text or binary files that can be fetched through the GitHub source API:
+
+```json
+{
+  "source_repo": "BionicCode/bioniccode-code-style",
+  "source_ref": "main",
+  "source_path": ".editorconfig",
+  "target_path": ".editorconfig",
+  "direction": "source_to_target",
+  "lifecycle_policy": "enforce",
+  "uniqueness_policy": "basename_unique",
+  "managed_scope": "whole_file"
+}
+```
+
+`inside_markers` lets the source own content inside each marker block while the target owns all outside content. Existing targets must keep the same number of exact marker blocks as the source, matched by occurrence order:
 
 ```json
 {
@@ -115,7 +142,7 @@ Each entry is a strict one-to-one mapping and is valid only as an item of `Manif
 }
 ```
 
-`outside_markers` lets the source own content outside each marker block while the target owns the inside content:
+`outside_markers` lets the source own content outside each marker block while the target owns the inside content. Existing targets may keep all marker blocks, or omit all marker blocks and match the source outside projection:
 
 ```json
 {
@@ -133,6 +160,18 @@ Each entry is a strict one-to-one mapping and is valid only as an item of `Manif
   }
 }
 ```
+
+Source files can use a repository-specific placeholder like this:
+
+```markdown
+<!-- BEGIN REPOSITORY SPECIFICS -->
+<!-- Repository owners may edit only this section. -->
+<!-- END REPOSITORY SPECIFICS -->
+```
+
+The manifest marker strings in this example are exactly `<!-- BEGIN REPOSITORY SPECIFICS -->` and `<!-- END REPOSITORY SPECIFICS -->`. Do not append annotations inside a marker delimiter unless the manifest marker string also includes that annotation exactly.
+
+If no target-owned section is desired, use `managed_scope: "whole_file"` instead of a marker-scoped value.
 
 Marker-scoped synchronization is intended for text files. Marker-scoped source and target files are decoded and encoded as strict UTF-8.
 
@@ -152,10 +191,50 @@ Current marker validation criteria:
 - `markers.start` and `markers.end` are required non-empty strings.
 - `markers.start` and `markers.end` must not be identical.
 - Marker matching is exact substring matching.
+- Marker matching does not trim, case-fold, regex-match, or normalize whitespace.
 - Multiple marker blocks and adjacent marker blocks are allowed.
 - Nested marker blocks are rejected.
+- Source marker blocks define the authoritative sync regions where deterministically enforceable.
 - Source and target marker blocks are matched by occurrence order.
-- Existing source and target files must have the same number of marker blocks.
+- `inside_markers` requires matching exact marker block count and occurrence order.
+- `inside_markers` does not prove same source-context position because outside content is target-owned; stronger moved-block enforcement requires future marker IDs, named anchors, or source-owned outside context anchors.
+- `outside_markers` allows complete omission of all source-defined target-owned blocks when the target equals the source outside projection.
+- `outside_markers` rejects partial marker block omission and extra target fences until marker IDs or named blocks exist.
+
+## Common Recipes
+
+- Sync `.editorconfig`: use `managed_scope: "whole_file"`, `lifecycle_policy: "enforce"`, and `uniqueness_policy: "basename_unique"`.
+- Sync `Directory.Build.props`: use `managed_scope: "whole_file"` and `lifecycle_policy: "enforce"`.
+- Sync `AGENTS.md` with repository-specific customization: use `managed_scope: "outside_markers"` with exact repository-specific markers.
+- Sync Copilot instruction files with repository-specific customization: use `managed_scope: "outside_markers"` with exact markers.
+- Seed a starter file once: use `lifecycle_policy: "seed_once"` and `managed_scope: "whole_file"`.
+
+## Failure Mode Examples
+
+- Old top-level array manifest: wrap the array under `entries` and add `schema_version`.
+- Duplicate target path: each normalized `target_path` may appear once.
+- Basename mismatch: `basename(source_path)` must equal `basename(target_path)`.
+- Private source without `source_token`: pass an explicit read-only source token secret.
+- Marker exact-match failure: source or target delimiter text does not match the manifest exactly.
+- `outside_markers` partial marker mismatch: target has some but not all source-defined marker blocks, or adds extra exact marker blocks.
+- Marker-scoped binary or invalid UTF-8 content: marker-scoped entries require strict UTF-8 text.
+
+## Security And Limits
+
+- Caller `GITHUB_TOKEN` writes only to the caller repository.
+- `source_token` is optional, should be read-only, and is needed only for private source repositories.
+- Avoid implicit secret inheritance; pass only the named `source_token` secret when needed.
+- Pin reusable workflow versions for production, preferably to a full commit SHA.
+- Marker scopes are for UTF-8 text files.
+- `whole_file` remains byte-for-byte behavior and can handle binary files when GitHub source-fetch behavior supports them.
+- Large files are constrained by GitHub repository contents/raw API behavior.
+
+## Roadmap
+
+- Current: `source_to_target`, `whole_file`, `outside_markers`, and `inside_markers`.
+- Planned: directory or glob sync.
+- Possible later: delete policy, marker IDs, named anchors, or source-owned outside context anchors.
+- Deferred: `target_to_source` and `two_way`.
 
 ## Mapping Rules
 

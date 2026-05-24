@@ -14,9 +14,9 @@ Declares which portion of the target file is managed by the workflow.
 
 | Value | Supported | Markers | Description |
 |---|---:|---|---|
-| `whole_file` | Yes | Forbidden | The entire target file is managed by the source file content. |
-| `outside_markers` | Yes | Required | Source owns content outside marker blocks. Target owns content inside marker blocks and the marker delimiters. |
-| `inside_markers` | Yes | Required | Source owns content inside marker blocks. Target owns content outside marker blocks and the marker delimiters. |
+| `whole_file` | Yes | Forbidden | Source owns the entire target file. Sync is byte-for-byte and is suitable for text or binary files that can be fetched through the GitHub source API. |
+| `outside_markers` | Yes | Required | Source owns content outside source-defined marker blocks. Target owns content inside those source-defined blocks. Existing targets may keep all marker blocks or omit all marker blocks. |
+| `inside_markers` | Yes | Required | Source owns content inside marker blocks. Target owns outside content. Existing targets must keep matching exact marker blocks by occurrence order. |
 
 ## Notes
 
@@ -29,4 +29,9 @@ Marker validation criteria:
 - `markers.start` and `markers.end` are required non-empty strings.
 - `markers.start` and `markers.end` must not be identical.
 - Marker delimiters are matched as exact text, not regular expressions.
+- Source-side marker blocks define authoritative extension points where deterministically enforceable.
 - Source and target marker blocks are matched by occurrence order.
+- `outside_markers` allows complete omission of all target-owned marker blocks when the target equals the source outside projection.
+- `outside_markers` rejects partial marker block omission and extra exact marker blocks until marker IDs or named blocks exist.
+- `inside_markers` requires matching exact marker block count and occurrence order, but does not prove same-source-context position because outside content is target-owned.
+- Stronger moved-block enforcement requires future marker IDs, named anchors, or source-owned outside context anchors.

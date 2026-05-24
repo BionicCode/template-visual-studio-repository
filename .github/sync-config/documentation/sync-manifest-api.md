@@ -10,7 +10,27 @@ The caller-owned manifest lives at:
 
 The authoritative schema and runtime rules are bundled with the reusable workflow version being executed. The schema copied into a caller repository is for editor tooling and human guidance.
 
-Marker-scoped synchronization is supported for strict UTF-8 text files. Marker delimiters are matched exactly, marker blocks are matched by occurrence order, and existing target delimiter text is preserved.
+Marker-scoped synchronization is supported for strict UTF-8 text files. Source marker blocks define authoritative sync regions where deterministically enforceable, marker delimiters are matched exactly, marker blocks are matched by occurrence order, and existing target delimiter text is preserved.
+
+## Runtime Support
+
+| Feature | Schema-valid | Runtime-supported | Notes |
+|---|---:|---:|---|
+| `source_to_target` + `whole_file` | Yes | Yes | Byte-for-byte source-to-target sync. |
+| `source_to_target` + `outside_markers` | Yes | Yes | Source owns outside content; target-owned blocks may be preserved or fully omitted by projection. |
+| `source_to_target` + `inside_markers` | Yes | Yes | Source inner content is enforced by occurrence order. |
+| `target_to_source` | Yes | No | Rejected by current execution rules. |
+| `two_way` | Yes | No | Rejected by current execution rules. |
+| Directory or glob sync | No | No | Not part of the current manifest API. |
+| Delete unmatched targets | No | No | Extra files are not deleted automatically. |
+
+## Marker-Scoped Runtime Errors
+
+- Missing source markers for a marker-scoped entry.
+- Malformed, unmatched, or nested source or target markers.
+- `inside_markers` target missing, fewer, or extra exact marker blocks.
+- `outside_markers` target containing a partial set of marker blocks or extra exact marker blocks.
+- UTF-8 decode failure for marker-scoped source or target content.
 
 ## Types
 
