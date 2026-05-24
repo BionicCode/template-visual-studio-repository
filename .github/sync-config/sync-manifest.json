@@ -11,36 +11,22 @@
       "lifecycle_policy": "enforce",
       "uniqueness_policy": "none",
       "managed_scope": "outside_markers",
-      "markers": {
-        "start": "<!-- BEGIN REPOSITORY SPECIFICS: repository owners may edit only this section -->",
+        "markers": {
+          "start": "<!-- BEGIN REPOSITORY SPECIFICS -->",
         "end": "<!-- END REPOSITORY SPECIFICS -->"
       }
     },
     {
       "source_repo": "BionicCode/template-visual-studio-repository",
       "source_ref": "main",
-      "source_path": "copilot-instructions.md",
-      "target_path": "copilot-instructions.md",
+      "source_path": ".github/copilot-instructions.md",
+      "target_path": ".github/copilot-instructions.md",
       "direction": "source_to_target",
       "lifecycle_policy": "enforce",
       "uniqueness_policy": "none",
       "managed_scope": "outside_markers",
       "markers": {
-        "start": "<!-- BEGIN REPOSITORY SPECIFICS: repository owners may edit only this section -->",
-        "end": "<!-- END REPOSITORY SPECIFICS -->"
-      }
-    },
-    {
-      "source_repo": "BionicCode/template-visual-studio-repository",
-      "source_ref": "main",
-      "source_path": "AGENTS.md",
-      "target_path": "AGENTS.md",
-      "direction": "source_to_target",
-      "lifecycle_policy": "enforce",
-      "uniqueness_policy": "none",
-      "managed_scope": "outside_markers",
-      "markers": {
-        "start": "<!-- BEGIN REPOSITORY SPECIFICS: repository owners may edit only this section -->",
+        "start": "<!-- BEGIN REPOSITORY SPECIFICS -->",
         "end": "<!-- END REPOSITORY SPECIFICS -->"
       }
     },
@@ -54,7 +40,7 @@
       "uniqueness_policy": "none",
       "managed_scope": "outside_markers",
       "markers": {
-        "start": "<!-- BEGIN REPOSITORY SPECIFICS: repository owners may edit only this section -->",
+        "start": "<!-- BEGIN REPOSITORY SPECIFICS -->",
         "end": "<!-- END REPOSITORY SPECIFICS -->"
       }
     },
@@ -68,7 +54,7 @@
       "uniqueness_policy": "none",
       "managed_scope": "outside_markers",
       "markers": {
-        "start": "<!-- BEGIN REPOSITORY SPECIFICS: repository owners may edit only this section -->",
+        "start": "<!-- BEGIN REPOSITORY SPECIFICS -->",
         "end": "<!-- END REPOSITORY SPECIFICS -->"
       }
     },
@@ -82,7 +68,7 @@
       "uniqueness_policy": "none",
       "managed_scope": "outside_markers",
       "markers": {
-        "start": "<!-- BEGIN REPOSITORY SPECIFICS: repository owners may edit only this section -->",
+        "start": "<!-- BEGIN REPOSITORY SPECIFICS -->",
         "end": "<!-- END REPOSITORY SPECIFICS -->"
       }
     },
@@ -96,7 +82,7 @@
       "uniqueness_policy": "none",
       "managed_scope": "outside_markers",
       "markers": {
-        "start": "<!-- BEGIN REPOSITORY SPECIFICS: repository owners may edit only this section -->",
+        "start": "<!-- BEGIN REPOSITORY SPECIFICS -->",
         "end": "<!-- END REPOSITORY SPECIFICS -->"
       }
     },

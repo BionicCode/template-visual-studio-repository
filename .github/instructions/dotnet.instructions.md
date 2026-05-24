@@ -135,6 +135,7 @@ When you changed code, report:
 - whether documentation was updated and at what level,
 - and any remaining warnings/errors or blockers with a reason.
 
-<!-- BEGIN REPOSITORY SPECIFICS: repository owners may edit only this section -->
+<!-- BEGIN REPOSITORY SPECIFICS -->
+<!-- Repository owners may edit only this section -->
 
 <!-- END REPOSITORY SPECIFICS -->

@@ -200,6 +200,7 @@ Before finishing, verify:
 - Markdown docs are updated when consumers need examples or data-model explanation,
 - and no stale comments remain that contradict the implementation.
 
-<!-- BEGIN REPOSITORY SPECIFICS: repository owners may edit only this section -->
+<!-- BEGIN REPOSITORY SPECIFICS -->
+<!-- Repository owners may edit only this section -->
 
 <!-- END REPOSITORY SPECIFICS -->
