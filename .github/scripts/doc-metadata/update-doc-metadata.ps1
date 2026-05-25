@@ -851,6 +851,28 @@ function Validate-MetadataConfig {
     $errors.ToArray()
 }
 
+function Validate-EffectiveMetadataConfig {
+    param(
+        [object] $Config,
+        [string] $PathName
+    )
+
+    $errors = [System.Collections.Generic.List[string]]::new()
+    Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-MetadataConfig -Config $Config -PathName $PathName -RequireAll $true)
+
+    if ((Get-PropertyValue -Object $Config -Name "metadataFormat") -eq "comment-block") {
+        if ([string]::IsNullOrWhiteSpace([string] (Get-PropertyValue -Object $Config -Name "commentStart"))) {
+            $errors.Add("$PathName.commentStart is required for comment-block metadata.")
+        }
+
+        if ([string]::IsNullOrWhiteSpace([string] (Get-PropertyValue -Object $Config -Name "commentEnd"))) {
+            $errors.Add("$PathName.commentEnd is required for comment-block metadata.")
+        }
+    }
+
+    $errors.ToArray()
+}
+
 function Read-Manifest {
     param([string] $ManifestFile)
 
@@ -880,6 +902,7 @@ function Read-Manifest {
 
     $defaults = Get-PropertyValue -Object $manifest -Name "defaults"
     Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-MetadataConfig -Config $defaults -PathName "defaults" -RequireAll $true)
+    Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-EffectiveMetadataConfig -Config (New-MetadataConfig -Defaults $defaults) -PathName "defaults effective config")
 
     [object[]] $includeEntries = @(Get-JsonArrayProperty -Object $manifest -Name "include")
     [object[]] $excludeEntries = @(Get-JsonArrayProperty -Object $manifest -Name "exclude")
@@ -896,16 +919,7 @@ function Read-Manifest {
         }
 
         Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-MetadataConfig -Config $override -PathName "overrides[$overrideIndex]" -RequireAll $false -AllowPatternProperties $true)
-        $overrideFormat = Get-PropertyValue -Object $override -Name "metadataFormat"
-        if ($overrideFormat -eq "comment-block") {
-            if ([string]::IsNullOrWhiteSpace([string] (Get-PropertyValue -Object $override -Name "commentStart"))) {
-                $errors.Add("overrides[$overrideIndex].commentStart is required for comment-block metadata.")
-            }
-
-            if ([string]::IsNullOrWhiteSpace([string] (Get-PropertyValue -Object $override -Name "commentEnd"))) {
-                $errors.Add("overrides[$overrideIndex].commentEnd is required for comment-block metadata.")
-            }
-        }
+        Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-EffectiveMetadataConfig -Config (New-MetadataConfig -Defaults $defaults -Override $override) -PathName "overrides[$overrideIndex] effective config")
 
         [object[]] $overrideInclude = @(Get-JsonArrayProperty -Object $override -Name "include")
         [object[]] $overrideExclude = @(Get-JsonArrayProperty -Object $override -Name "exclude")
@@ -1600,8 +1614,23 @@ function Initialize-OrUpdateFile {
     $newUpdated = $currentSnapshot.Updated
     $reason = $null
     $shouldWrite = $false
+    [object[]] $timestampValidationErrors = @($validationErrors | Where-Object { $_.Rule -in @($config.createdField, $config.updatedField) })
+    $hasManualVersionIncrease = $null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and $null -ne $currentSnapshot.Version -and $currentSnapshot.Version -gt $previousSnapshot.Version
+    $hasValidPreviousTimestamps = $null -ne $previousSnapshot -and (Test-IsTimestamp $previousSnapshot.Created) -and (Test-IsTimestamp $previousSnapshot.Updated)
+    $hasTimestampDriftFromPrevious = $null -ne $previousSnapshot -and ($currentSnapshot.Created -ne $previousSnapshot.Created -or $currentSnapshot.Updated -ne $previousSnapshot.Updated)
 
-    if ($validationErrors.Count -gt 0) {
+    if ($ModeValue -eq "Update" -and -not $bodyChanged -and ($timestampValidationErrors.Count -gt 0 -or $hasTimestampDriftFromPrevious)) {
+        if (-not $hasValidPreviousTimestamps) {
+            Add-FailedFile -Report $Report -Path $repoPath -Rule "created/updated timestamp drift could not be safely restored" -Current "created=$($currentSnapshot.Created); updated=$($currentSnapshot.Updated)" -Expected "valid previous committed created and updated timestamps"
+            return
+        }
+
+        $newCreated = $previousSnapshot.Created
+        $newUpdated = $previousSnapshot.Updated
+        $reason = if ($hasManualVersionIncrease) { "metadata repaired; manual version rebaseline" } else { "metadata repaired" }
+        $shouldWrite = $true
+    }
+    elseif ($validationErrors.Count -gt 0) {
         if ($null -eq $newVersion) {
             $newVersion = 1
         }
@@ -1621,15 +1650,9 @@ function Initialize-OrUpdateFile {
         $reason = "body changed"
         $shouldWrite = $true
     }
-    elseif ($null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and $currentSnapshot.Version -gt $previousSnapshot.Version) {
+    elseif ($hasManualVersionIncrease) {
         Add-UnchangedFile -Report $Report -Path $repoPath -Reason "manual version rebaseline" -OldVersion $previousSnapshot.Version -NewVersion $currentSnapshot.Version
         return
-    }
-    elseif ($null -ne $previousSnapshot -and (Test-IsTimestamp $previousSnapshot.Created) -and (Test-IsTimestamp $previousSnapshot.Updated) -and ($currentSnapshot.Created -ne $previousSnapshot.Created -or $currentSnapshot.Updated -ne $previousSnapshot.Updated)) {
-        $newCreated = $previousSnapshot.Created
-        $newUpdated = $previousSnapshot.Updated
-        $reason = "metadata repaired"
-        $shouldWrite = $true
     }
     else {
         $reason = if ($null -ne $previousInfo -and (($currentInfo.MetadataLines -join "`n") -ne ($previousInfo.MetadataLines -join "`n"))) { "metadata-only change" } else { "no body change" }

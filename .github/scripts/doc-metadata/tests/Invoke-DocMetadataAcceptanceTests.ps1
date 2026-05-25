@@ -253,6 +253,56 @@ Invoke-Test "Metadata-only manual version increase is reported without increment
     Assert-Equal 0 @($changed.changedFiles).Count "ChangedFilesOutputPath should contain no updated paths."
 }
 
+Invoke-Test "Metadata-only manual version increase restores timestamp drift from valid previous metadata" {
+    $root = New-TestRepository
+    $readme = Join-Path $root "README.md"
+    Write-Utf8File -Path $readme -Content (Get-ReadmeWithMetadata -Version 1 -Created "2026-01-01T00:00:00+00:00" -Updated "2026-01-01T00:00:00+00:00")
+    Commit-All -Root $root
+    Write-Utf8File -Path $readme -Content (Get-ReadmeWithMetadata -Version 20 -Created "2026-01-02T00:00:00+00:00" -Updated "2026-01-02T00:00:00+00:00")
+    $changedPath = Join-Path $root "changed.json"
+    $reportPath = Join-Path $root "report.json"
+
+    $result = Invoke-Tool -Root $root -Mode "Update" -ExtraArguments @("-Path", "README.md", "-ChangedFilesOutputPath", "changed.json", "-ReportOutputPath", "report.json")
+
+    Assert-Equal 0 $result.ExitCode "Safe timestamp restore should pass."
+    $content = Get-Content -LiteralPath $readme -Raw
+    Assert-True ($content -match "doc_version: 20") "Manual version 20 should be preserved."
+    Assert-True ($content -match "created: 2026-01-01T00:00:00\+00:00") "Created timestamp should be restored from previous metadata."
+    Assert-True ($content -match "updated: 2026-01-01T00:00:00\+00:00") "Updated timestamp should be restored from previous metadata."
+    $changed = Read-JsonFile $changedPath
+    Assert-Equal 1 @($changed.changedFiles).Count "ChangedFilesOutputPath should include the repaired file."
+    Assert-Equal "README.md" $changed.changedFiles[0] "ChangedFilesOutputPath should contain README.md."
+    $report = Read-JsonFile $reportPath
+    Assert-Equal 20 $report.updatedFiles[0].oldDocVersion "Report old version should be the manually changed current version."
+    Assert-Equal 20 $report.updatedFiles[0].newDocVersion "Report new version should preserve the manual baseline."
+    $rawReport = Get-Content -LiteralPath $reportPath -Raw
+    Assert-True ($rawReport -match '"oldUpdated":\s*"2026-01-02T00:00:00\+00:00"') "Report old updated timestamp should show the drifted value."
+    Assert-True ($rawReport -match '"newUpdated":\s*"2026-01-01T00:00:00\+00:00"') "Report new updated timestamp should show the restored value."
+    Assert-True ($report.updatedFiles[0].reason -match "manual version rebaseline") "Report should mention manual rebaseline."
+}
+
+Invoke-Test "Metadata-only manual version increase fails when timestamp drift cannot be safely restored" {
+    $root = New-TestRepository
+    $readme = Join-Path $root "README.md"
+    Write-Utf8File -Path $readme -Content (Get-ReadmeWithMetadata -Version 1 -Created "not-a-timestamp" -Updated "also-not-a-timestamp")
+    Commit-All -Root $root
+    Write-Utf8File -Path $readme -Content (Get-ReadmeWithMetadata -Version 20 -Created "2026-01-02T00:00:00+00:00" -Updated "2026-01-02T00:00:00+00:00")
+    $before = Get-Content -LiteralPath $readme -Raw
+    $changedPath = Join-Path $root "changed.json"
+    $reportPath = Join-Path $root "report.json"
+
+    $result = Invoke-Tool -Root $root -Mode "Update" -ExtraArguments @("-Path", "README.md", "-ChangedFilesOutputPath", "changed.json", "-ReportOutputPath", "report.json")
+    $after = Get-Content -LiteralPath $readme -Raw
+
+    Assert-True ($result.ExitCode -ne 0) "Unsafe timestamp restore should fail."
+    Assert-Equal $before $after "Unsafe timestamp restore should not rewrite the file."
+    Assert-True ($result.Stdout -match "timestamp drift could not be safely restored") "Failure should explain that timestamp drift could not be safely restored."
+    $changed = Read-JsonFile $changedPath
+    Assert-Equal 0 @($changed.changedFiles).Count "ChangedFilesOutputPath should remain empty on unsafe restore failure."
+    $report = Read-JsonFile $reportPath
+    Assert-True ($report.failedFiles[0].rule -match "timestamp drift could not be safely restored") "JSON report should include the unsafe restore failure."
+}
+
 Invoke-Test "Version rollback is rejected" {
     $root = New-TestRepository
     $readme = Join-Path $root "README.md"
@@ -330,6 +380,20 @@ Invoke-Test "Manifest rejects front matter at bottom and accepts comment block b
     Assert-True ($invalid.ExitCode -ne 0) "YAML front matter bottom placement should fail."
 
     Copy-Item -LiteralPath (Join-Path $PublicSurfaceSource "doc-metadata-manifest.json") -Destination $manifest -Force
+    $json = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json -Depth 32
+    $json.overrides = @([pscustomobject]@{
+        include = @("docs/**/*.md")
+        metadataPlacement = "bottom"
+    })
+    $json | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath $manifest -Encoding utf8NoBOM
+
+    $invalidInherited = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-ReportOutputPath", "invalid-inherited-report.json")
+    $invalidInheritedReport = Read-JsonFile (Join-Path $root "invalid-inherited-report.json")
+
+    Assert-True ($invalidInherited.ExitCode -ne 0) "Inherited YAML front matter bottom placement should fail."
+    Assert-True ($invalidInheritedReport.failedFiles[0].current -match "cannot use metadataPlacement 'bottom' with yaml-front-matter") "Inherited YAML placement failure should be reported."
+
+    Copy-Item -LiteralPath (Join-Path $PublicSurfaceSource "doc-metadata-manifest.json") -Destination $manifest -Force
     $valid = Invoke-Tool -Root $root -Mode "Check"
 
     Assert-True ($valid.Stdout -notmatch "cannot use metadataPlacement 'bottom' with yaml-front-matter") "Comment-block bottom override should be accepted by manifest validation."
@@ -351,11 +415,11 @@ Invoke-Test "Filename glob matches root agent files but not nested or lowercase 
     Assert-Equal 0 $result.ExitCode "Bootstrap should pass."
     $report = Read-JsonFile (Join-Path $root "report.json")
     $updatedPaths = @($report.updatedFiles.path)
-    Assert-True ($updatedPaths -contains "AGENTS.md") "*AGENT*.md should match AGENTS.md."
-    Assert-True ($updatedPaths -contains "AGENT_GUARDRAILS.md") "*AGENT*.md should match AGENT_GUARDRAILS.md."
-    Assert-True ($updatedPaths -contains "NET_AGENTS.md") "*AGENT*.md should match NET_AGENTS.md."
-    Assert-True ($updatedPaths -notcontains "docs/AGENTS.md") "*AGENT*.md should not cross directory separators."
-    Assert-True ($updatedPaths -notcontains "agents.md") "Matching is case-sensitive, so lowercase agents.md should not match *AGENT*.md."
+    Assert-True ($updatedPaths -ccontains "AGENTS.md") "*AGENT*.md should match AGENTS.md."
+    Assert-True ($updatedPaths -ccontains "AGENT_GUARDRAILS.md") "*AGENT*.md should match AGENT_GUARDRAILS.md."
+    Assert-True ($updatedPaths -ccontains "NET_AGENTS.md") "*AGENT*.md should match NET_AGENTS.md."
+    Assert-True ($updatedPaths -cnotcontains "docs/AGENTS.md") "*AGENT*.md should not cross directory separators."
+    Assert-True ($updatedPaths -cnotcontains "agents.md") "Matching is case-sensitive, so lowercase agents.md should not match *AGENT*.md."
 }
 
 Invoke-Test "Recursive filename glob matches nested agent files" {
@@ -372,8 +436,8 @@ Invoke-Test "Recursive filename glob matches nested agent files" {
     Assert-Equal 0 $result.ExitCode "Bootstrap should pass."
     $report = Read-JsonFile (Join-Path $root "report.json")
     $updatedPaths = @($report.updatedFiles.path)
-    Assert-True ($updatedPaths -contains "AGENTS.md") "**/*AGENT*.md should match root-level AGENTS.md."
-    Assert-True ($updatedPaths -contains "docs/AGENTS.md") "**/*AGENT*.md should match nested docs/AGENTS.md."
+    Assert-True ($updatedPaths -ccontains "AGENTS.md") "**/*AGENT*.md should match root-level AGENTS.md."
+    Assert-True ($updatedPaths -ccontains "docs/AGENTS.md") "**/*AGENT*.md should match nested docs/AGENTS.md."
 }
 
 Invoke-Test "GitHub summary is written when requested" {
