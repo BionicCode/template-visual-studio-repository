@@ -21,9 +21,9 @@
     ".github/tools/doc-metadata/documentation/**/*.md",
     ".github/tools/sync-config/documentation/**/*.md",
     ".github/instructions/**/*.md",
-    ".github/*AGENT*.md",
     ".github/*COPILOT*.md",
-    ".github/*copilot*.md"
+    ".github/*copilot*.md",
+    ".github/*AGENT*.md"
   ],
   "exclude": [
     "**/.git/**",
