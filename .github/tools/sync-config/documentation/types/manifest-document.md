@@ -1,3 +1,8 @@
+---
+doc_version: 1
+created: 2026-05-26T01:40:38+02:00
+updated: 2026-05-26T01:40:38+02:00
+---
 # ManifestDocument
 
 The top-level manifest object. This type has no parent.

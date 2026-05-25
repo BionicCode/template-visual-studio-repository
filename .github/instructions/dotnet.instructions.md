@@ -1,3 +1,8 @@
+---
+doc_version: 1
+created: 2026-05-26T01:40:37+02:00
+updated: 2026-05-26T01:40:37+02:00
+---
 # dotnet.instructions.md
 
 See [AGENTS.md](../../src/AGENTS.md) for further .NET specific instructions. That AGENTS.md file will have precedence over this current file which can be outdated.

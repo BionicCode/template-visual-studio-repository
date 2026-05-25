@@ -1,3 +1,8 @@
+---
+doc_version: 1
+created: 2026-05-26T01:40:38+02:00
+updated: 2026-05-26T01:40:38+02:00
+---
 # ManagedScope
 
 Declares which portion of the target file is managed by the workflow.

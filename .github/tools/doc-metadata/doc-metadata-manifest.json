@@ -10,6 +10,18 @@
     "versioningMode": "body-content-change",
     "timestampFormat": "iso-8601-offset"
   },
+  "documentEligibility": {
+    "allowedExtensions": [
+      ".md",
+      ".markdown",
+      ".txt"
+    ],
+    "additionalAllowedExtensions": [],
+    "deniedExtensions": [],
+    "deniedPaths": [],
+    "allowExtensionless": false,
+    "failOnIneligibleMatches": false
+  },
   "include": [
     "README.md",
     "*AGENT*.md",

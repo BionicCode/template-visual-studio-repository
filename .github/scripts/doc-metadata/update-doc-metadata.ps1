@@ -2,7 +2,7 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Bootstrap", "Update", "Check")]
+    [ValidateSet("Analyze", "Bootstrap", "Update", "Check")]
     [string] $Mode,
 
     [string] $Root,
@@ -34,6 +34,7 @@ $script:ManifestFullPath = $null
 $script:ManagedFields = @("doc_version", "created", "updated")
 $script:TimestampPattern = "^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?[+-]\d{2}:\d{2}$"
 $script:RemediationCommand = "pwsh ./.github/scripts/doc-metadata/update-doc-metadata.ps1 -Mode Update -Root ."
+$script:DefaultAllowedDocumentExtensions = @(".md", ".markdown", ".txt")
 
 function New-Report {
     param(
@@ -57,7 +58,28 @@ function New-Report {
         unchangedFiles = [System.Collections.Generic.List[object]]::new()
         skippedFiles = [System.Collections.Generic.List[object]]::new()
         failedFiles = [System.Collections.Generic.List[object]]::new()
+        ineligibleFiles = [System.Collections.Generic.List[object]]::new()
+        ignoredByEligibility = [System.Collections.Generic.List[object]]::new()
+        ignoredByDeniedPath = [System.Collections.Generic.List[object]]::new()
+        ignoredByDeniedExtension = [System.Collections.Generic.List[object]]::new()
+        ignoredBinaryOrNonText = [System.Collections.Generic.List[object]]::new()
         staleCheckSkippedFiles = [System.Collections.Generic.List[object]]::new()
+        analysis = [ordered]@{
+            metadataValid = $false
+            repairRequired = $false
+            repairSafe = $true
+            unrecoverableFailure = $false
+            repairableFiles = [System.Collections.Generic.List[object]]::new()
+            unrecoverableFiles = [System.Collections.Generic.List[object]]::new()
+            repairCategories = [ordered]@{
+                initialized = [System.Collections.Generic.List[string]]::new()
+                incremented = [System.Collections.Generic.List[string]]::new()
+                restoredFromHistory = [System.Collections.Generic.List[string]]::new()
+                repaired = [System.Collections.Generic.List[string]]::new()
+                skippedManualEdit = [System.Collections.Generic.List[string]]::new()
+                notSafelyRepairable = [System.Collections.Generic.List[string]]::new()
+            }
+        }
         summaryCounts = @{}
     }
 }
@@ -153,6 +175,74 @@ function Add-StaleSkippedFile {
     })
 }
 
+function Add-IneligibleFile {
+    param(
+        [hashtable] $Report,
+        [string] $Path,
+        [string] $Reason,
+        [string] $Category,
+        [object] $Current = $null,
+        [string] $Expected = "eligible document text file",
+        [string] $Remediation = "Update documentEligibility or convert this document to UTF-8 if it should be managed by doc-metadata."
+    )
+
+    $entry = [ordered]@{
+        path = $Path
+        reason = $Reason
+        category = $Category
+        current = $Current
+        expected = $Expected
+        remediation = $Remediation
+    }
+
+    $Report.ineligibleFiles.Add($entry)
+    switch ($Category) {
+        "ignoredByDeniedPath" { $Report.ignoredByDeniedPath.Add($entry); break }
+        "ignoredByDeniedExtension" { $Report.ignoredByDeniedExtension.Add($entry); break }
+        "ignoredBinaryOrNonText" { $Report.ignoredBinaryOrNonText.Add($entry); break }
+        default { $Report.ignoredByEligibility.Add($entry); break }
+    }
+}
+
+function Add-RepairableFile {
+    param(
+        [hashtable] $Report,
+        [string] $Path,
+        [string] $Reason,
+        [string[]] $Categories = @("repaired")
+    )
+
+    $Report.analysis.repairableFiles.Add([ordered]@{
+        path = $Path
+        reason = $Reason
+        categories = @($Categories)
+    })
+
+    foreach ($category in @($Categories)) {
+        if ($Report.analysis.repairCategories.Contains($category)) {
+            $Report.analysis.repairCategories[$category].Add($Path)
+        }
+    }
+}
+
+function Add-UnrecoverableFile {
+    param(
+        [hashtable] $Report,
+        [string] $Path,
+        [string] $Reason,
+        [object] $Current = $null,
+        [string] $Expected = "safely repairable metadata state"
+    )
+
+    $Report.analysis.unrecoverableFiles.Add([ordered]@{
+        path = $Path
+        reason = $Reason
+        current = $Current
+        expected = $Expected
+    })
+    $Report.analysis.repairCategories.notSafelyRepairable.Add($Path)
+}
+
 function Get-PropertyValue {
     param(
         [object] $Object,
@@ -179,6 +269,19 @@ function Get-ObjectPropertyNames {
     }
 
     @($Object.PSObject.Properties | ForEach-Object { $_.Name })
+}
+
+function Test-ObjectPropertyExists {
+    param(
+        [object] $Object,
+        [string] $Name
+    )
+
+    if ($null -eq $Object) {
+        return $false
+    }
+
+    $null -ne $Object.PSObject.Properties[$Name]
 }
 
 function Get-JsonArrayProperty {
@@ -273,6 +376,145 @@ function Normalize-RepoPath {
     }
 
     $normalized.TrimStart("/")
+}
+
+function Normalize-EligibilityExtension {
+    param(
+        [object] $Value,
+        [string] $PathName
+    )
+
+    $text = ([string] $Value).Trim()
+    if ([string]::IsNullOrWhiteSpace($text) -or $text -eq ".") {
+        throw "$PathName must be a non-empty file extension."
+    }
+    if ($text.IndexOfAny([char[]]@("*", "?", "[", "]", "/", "\")) -ge 0) {
+        throw "$PathName must be an extension only and must not contain wildcards or path separators."
+    }
+    if (-not $text.StartsWith(".", [System.StringComparison]::Ordinal)) {
+        $text = ".$text"
+    }
+
+    $text.ToLowerInvariant()
+}
+
+function Test-RepoRelativePatternIsSafe {
+    param([string] $Pattern)
+
+    if ([string]::IsNullOrWhiteSpace($Pattern)) {
+        return $false
+    }
+    if ($Pattern -match "^[A-Za-z]:") {
+        return $false
+    }
+    if ($Pattern.StartsWith("/", [System.StringComparison]::Ordinal) -or $Pattern.StartsWith("\", [System.StringComparison]::Ordinal)) {
+        return $false
+    }
+    if ($Pattern.Contains("\")) {
+        return $false
+    }
+
+    $normalized = Normalize-RepoPath $Pattern
+    foreach ($segment in @($normalized -split "/")) {
+        if ($segment -eq "." -or $segment -eq "..") {
+            return $false
+        }
+    }
+
+    $true
+}
+
+function Get-DocumentEligibility {
+    param([object] $Manifest)
+
+    $eligibility = Get-PropertyValue -Object $Manifest -Name "documentEligibility"
+    $allowedSource = if ($null -ne $eligibility -and (Test-ObjectPropertyExists -Object $eligibility -Name "allowedExtensions")) {
+        @(Get-JsonArrayProperty -Object $eligibility -Name "allowedExtensions")
+    }
+    else {
+        @($script:DefaultAllowedDocumentExtensions)
+    }
+
+    $allowed = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($extension in @($allowedSource)) {
+        [void] $allowed.Add((Normalize-EligibilityExtension -Value $extension -PathName "documentEligibility.allowedExtensions[]"))
+    }
+    foreach ($extension in @(Get-JsonArrayProperty -Object $eligibility -Name "additionalAllowedExtensions")) {
+        [void] $allowed.Add((Normalize-EligibilityExtension -Value $extension -PathName "documentEligibility.additionalAllowedExtensions[]"))
+    }
+
+    $denied = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($extension in @(Get-JsonArrayProperty -Object $eligibility -Name "deniedExtensions")) {
+        [void] $denied.Add((Normalize-EligibilityExtension -Value $extension -PathName "documentEligibility.deniedExtensions[]"))
+    }
+
+    $deniedPaths = @(Get-JsonArrayProperty -Object $eligibility -Name "deniedPaths" | ForEach-Object { Normalize-RepoPath ([string] $_) })
+    $allowExtensionless = if ($null -ne $eligibility -and (Test-ObjectPropertyExists -Object $eligibility -Name "allowExtensionless")) { [bool] (Get-PropertyValue -Object $eligibility -Name "allowExtensionless") } else { $false }
+    $failOnIneligible = if ($null -ne $eligibility -and (Test-ObjectPropertyExists -Object $eligibility -Name "failOnIneligibleMatches")) { [bool] (Get-PropertyValue -Object $eligibility -Name "failOnIneligibleMatches") } else { $false }
+
+    [pscustomobject]@{
+        allowedExtensions = @($allowed)
+        deniedExtensions = @($denied)
+        deniedPaths = @($deniedPaths)
+        allowExtensionless = $allowExtensionless
+        failOnIneligibleMatches = $failOnIneligible
+    }
+}
+
+function Test-DocumentEligibility {
+    param(
+        [object] $Eligibility,
+        [string] $RepoPath
+    )
+
+    $normalizedPath = Normalize-RepoPath $RepoPath
+    if (@($Eligibility.deniedPaths).Count -gt 0 -and (Test-AnyPatternMatch -Patterns @($Eligibility.deniedPaths) -PathValue $normalizedPath)) {
+        return [pscustomobject]@{
+            Eligible = $false
+            Reason = "denied path"
+            Category = "ignoredByDeniedPath"
+            Current = $normalizedPath
+        }
+    }
+
+    $extension = [System.IO.Path]::GetExtension($normalizedPath).ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($extension)) {
+        if ($Eligibility.allowExtensionless) {
+            return [pscustomobject]@{ Eligible = $true; Reason = "eligible"; Category = $null; Current = $extension }
+        }
+
+        return [pscustomobject]@{
+            Eligible = $false
+            Reason = "extensionless not allowed"
+            Category = "ignoredByEligibility"
+            Current = "extensionless"
+        }
+    }
+
+    if (@($Eligibility.deniedExtensions) -contains $extension) {
+        return [pscustomobject]@{
+            Eligible = $false
+            Reason = "denied extension"
+            Category = "ignoredByDeniedExtension"
+            Current = $extension
+        }
+    }
+
+    if (@($Eligibility.allowedExtensions) -notcontains $extension) {
+        return [pscustomobject]@{
+            Eligible = $false
+            Reason = "extension not allowed"
+            Category = "ignoredByEligibility"
+            Current = $extension
+        }
+    }
+
+    [pscustomobject]@{
+        Eligible = $true
+        Reason = "eligible"
+        Category = $null
+        Current = $extension
+    }
 }
 
 function Convert-GlobToRegex {
@@ -527,6 +769,10 @@ function Read-StrictUtf8Text {
     param([string] $FullPath)
 
     $bytes = [System.IO.File]::ReadAllBytes($FullPath)
+    if ([Array]::IndexOf($bytes, [byte] 0) -ge 0) {
+        throw "File contains NUL bytes and is treated as binary/non-text."
+    }
+
     $hasBom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
     $offset = if ($hasBom) { 3 } else { 0 }
     $length = $bytes.Length - $offset
@@ -873,6 +1119,55 @@ function Validate-EffectiveMetadataConfig {
     $errors.ToArray()
 }
 
+function Validate-DocumentEligibility {
+    param([object] $Eligibility)
+
+    $errors = [System.Collections.Generic.List[string]]::new()
+    if ($null -eq $Eligibility) {
+        return $errors.ToArray()
+    }
+
+    $allowedProperties = @("allowedExtensions", "additionalAllowedExtensions", "deniedExtensions", "deniedPaths", "allowExtensionless", "failOnIneligibleMatches")
+    foreach ($propertyName in Get-ObjectPropertyNames $Eligibility) {
+        if ($propertyName -notin $allowedProperties) {
+            $errors.Add("documentEligibility has unknown property '$propertyName'.")
+        }
+    }
+
+    foreach ($propertyName in @("allowedExtensions", "additionalAllowedExtensions", "deniedExtensions")) {
+        foreach ($extension in @(Get-JsonArrayProperty -Object $Eligibility -Name $propertyName)) {
+            try {
+                [void] (Normalize-EligibilityExtension -Value $extension -PathName "documentEligibility.$propertyName[]")
+            }
+            catch {
+                $errors.Add($_.Exception.Message)
+            }
+        }
+    }
+
+    foreach ($pathPattern in @(Get-JsonArrayProperty -Object $Eligibility -Name "deniedPaths")) {
+        if (-not (Test-RepoRelativePatternIsSafe -Pattern ([string] $pathPattern))) {
+            $errors.Add("documentEligibility.deniedPaths[] must be a safe repository-relative forward-slash path or glob pattern.")
+        }
+    }
+
+    foreach ($propertyName in @("allowExtensionless", "failOnIneligibleMatches")) {
+        $value = Get-PropertyValue -Object $Eligibility -Name $propertyName
+        if ($null -ne $value -and $value -isnot [bool]) {
+            $errors.Add("documentEligibility.$propertyName must be a boolean.")
+        }
+    }
+
+    try {
+        [void] (Get-DocumentEligibility -Manifest ([pscustomobject]@{ documentEligibility = $Eligibility }))
+    }
+    catch {
+        $errors.Add($_.Exception.Message)
+    }
+
+    $errors.ToArray()
+}
+
 function Read-Manifest {
     param([string] $ManifestFile)
 
@@ -883,7 +1178,7 @@ function Read-Manifest {
     $manifestText = Get-Content -LiteralPath $ManifestFile -Raw
     $manifest = $manifestText | ConvertFrom-Json -Depth 32
     $errors = [System.Collections.Generic.List[string]]::new()
-    $allowedTopLevel = @('$schema', "version", "defaults", "include", "exclude", "overrides")
+    $allowedTopLevel = @('$schema', "version", "defaults", "include", "exclude", "overrides", "documentEligibility")
     foreach ($propertyName in Get-ObjectPropertyNames $manifest) {
         if ($propertyName -notin $allowedTopLevel) {
             $errors.Add("Manifest has unknown top-level property '$propertyName'.")
@@ -903,6 +1198,7 @@ function Read-Manifest {
     $defaults = Get-PropertyValue -Object $manifest -Name "defaults"
     Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-MetadataConfig -Config $defaults -PathName "defaults" -RequireAll $true)
     Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-EffectiveMetadataConfig -Config (New-MetadataConfig -Defaults $defaults) -PathName "defaults effective config")
+    Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-DocumentEligibility -Eligibility (Get-PropertyValue -Object $manifest -Name "documentEligibility"))
 
     [object[]] $includeEntries = @(Get-JsonArrayProperty -Object $manifest -Name "include")
     [object[]] $excludeEntries = @(Get-JsonArrayProperty -Object $manifest -Name "exclude")
@@ -941,10 +1237,12 @@ function Read-Manifest {
 function Resolve-GovernedFiles {
     param(
         [object] $Manifest,
-        [string[]] $BootstrapIncludePatterns = @()
+        [string[]] $BootstrapIncludePatterns = @(),
+        [hashtable] $Report = $null
     )
 
     $files = Get-AllRepositoryFiles
+    $eligibility = Get-DocumentEligibility -Manifest $Manifest
     [object[]] $bootstrapIncludeValues = @(Get-NonNullValues -Values $BootstrapIncludePatterns)
     $defaultIncludeEntries = if ($bootstrapIncludeValues.Length -gt 0) { $bootstrapIncludeValues } else { @(Get-JsonArrayProperty -Object $Manifest -Name "include") }
     $defaultIncludePatterns = Get-PatternList -Entries $defaultIncludeEntries
@@ -982,10 +1280,35 @@ function Resolve-GovernedFiles {
         }
 
         if ($null -ne $config) {
+            $eligibilityResult = Test-DocumentEligibility -Eligibility $eligibility -RepoPath $repoPath
+            if (-not $eligibilityResult.Eligible) {
+                if ($null -ne $Report) {
+                    Add-IneligibleFile -Report $Report -Path $repoPath -Reason $eligibilityResult.Reason -Category $eligibilityResult.Category -Current $eligibilityResult.Current
+                    if ($eligibility.failOnIneligibleMatches) {
+                        Add-FailedFile -Report $Report -Path $repoPath -Rule "documentEligibility" -Current $eligibilityResult.Current -Expected $eligibilityResult.Reason -Remediation "Update documentEligibility, adjust manifest patterns, or convert the file to an eligible UTF-8 document."
+                    }
+                }
+                continue
+            }
+
+            $fullPath = Join-Path $script:RepositoryRoot ($repoPath.Replace("/", [System.IO.Path]::DirectorySeparatorChar))
+            try {
+                [void] (Read-StrictUtf8Text -FullPath $fullPath)
+            }
+            catch {
+                if ($null -ne $Report) {
+                    Add-IneligibleFile -Report $Report -Path $repoPath -Reason "binary/non-text" -Category "ignoredBinaryOrNonText" -Current "not strict UTF-8 text" -Expected "strict UTF-8 text document" -Remediation "Convert this document to UTF-8 if it should be managed by doc-metadata."
+                    if ($eligibility.failOnIneligibleMatches) {
+                        Add-FailedFile -Report $Report -Path $repoPath -Rule "documentEligibility" -Current "binary/non-text" -Expected "strict UTF-8 text document" -Remediation "Convert this document to UTF-8 if it should be managed by doc-metadata."
+                    }
+                }
+                continue
+            }
+
             Write-Verbose "Governed file: $repoPath"
             $governed[$repoPath] = [pscustomobject]@{
                 Path = $repoPath
-                FullPath = Join-Path $script:RepositoryRoot ($repoPath.Replace("/", [System.IO.Path]::DirectorySeparatorChar))
+                FullPath = $fullPath
                 Config = $config
             }
         }
@@ -1210,9 +1533,16 @@ function Update-MetadataLines {
         [object] $Config
     )
 
+    $inputLines = @($MetadataLines)
+    if ($inputLines.Count -eq 1 -and [string]::IsNullOrEmpty($inputLines[0])) {
+        $inputLines = @()
+    }
+
     $lines = [System.Collections.Generic.List[string]]::new()
-    foreach ($line in @($MetadataLines)) {
-        $lines.Add($line)
+    foreach ($line in $inputLines) {
+        if ($null -ne $line) {
+            $lines.Add($line)
+        }
     }
 
     foreach ($fieldName in @($Config.versionField, $Config.createdField, $Config.updatedField)) {
@@ -1258,7 +1588,10 @@ function Set-MetadataContent {
     )
 
     $info = Get-MetadataInfo -Content $Content -Config $Config
-    $metadataLines = if ($info.HasMetadata -and -not $info.IsMalformed) { @($info.MetadataLines) } else { @() }
+    $metadataLines = [string[]]::new(0)
+    if ($info.HasMetadata -and -not $info.IsMalformed) {
+        $metadataLines = [string[]] @($info.MetadataLines)
+    }
     $updatedLines = Update-MetadataLines -MetadataLines $metadataLines -Values $Values -Config $Config
     $metadataBlock = New-MetadataBlock -Lines $updatedLines -Config $Config -NewLine $NewLine
 
@@ -1369,6 +1702,22 @@ function Get-ComparisonInfo {
 
     if (-not (Test-InGitRepository)) {
         $comparison.reason = "Not inside a Git repository."
+        return $comparison
+    }
+
+    if ([string]::IsNullOrWhiteSpace($RequestedEventName) -and -not [string]::IsNullOrWhiteSpace($RequestedBaseSha) -and -not [string]::IsNullOrWhiteSpace($RequestedHeadSha)) {
+        if (-not (Test-GitCommitExists $RequestedBaseSha)) {
+            throw "Base SHA '$RequestedBaseSha' is not fetchable in the local checkout."
+        }
+        if (-not (Test-GitCommitExists $RequestedHeadSha)) {
+            throw "Head SHA '$RequestedHeadSha' is not fetchable in the local checkout."
+        }
+
+        $comparison.mode = "local"
+        $comparison.baseSha = $RequestedBaseSha
+        $comparison.headSha = $RequestedHeadSha
+        $comparison.staleCheckAvailable = $true
+        $comparison.reason = "Comparing explicit base/head SHAs."
         return $comparison
     }
 
@@ -1511,7 +1860,8 @@ function Get-SelectedGovernedRecords {
     foreach ($record in @($candidateRecords)) {
         $repoPath = Normalize-RepoPath $record.Path
         if (-not $GovernedFiles.ContainsKey($repoPath)) {
-            $reason = if (Test-ManifestExcludedPath -Manifest $Manifest -RepoPath $repoPath) { "excluded by manifest" } else { "not governed by manifest" }
+            $ineligible = @($Report.ineligibleFiles | Where-Object { $_.path -eq $repoPath } | Select-Object -First 1)
+            $reason = if ($ineligible.Count -gt 0) { "ineligible by documentEligibility: $($ineligible[0].reason)" } elseif (Test-ManifestExcludedPath -Manifest $Manifest -RepoPath $repoPath) { "excluded by manifest" } else { "not governed by manifest" }
             Add-SkippedFile -Report $Report -Path $repoPath -Reason $reason
             continue
         }
@@ -1532,7 +1882,8 @@ function Initialize-OrUpdateFile {
     param(
         [object] $Record,
         [hashtable] $Report,
-        [string] $ModeValue
+        [string] $ModeValue,
+        [hashtable] $Comparison = $null
     )
 
     $repoPath = $Record.Path
@@ -1558,7 +1909,8 @@ function Initialize-OrUpdateFile {
 
     $currentInfo = Get-MetadataInfo -Content $textFile.Content -Config $config
     $currentSnapshot = Get-MetadataSnapshot -MetadataInfo $currentInfo -Config $config
-    $previousContent = Get-GitFileContent -Revision "HEAD" -RepoPath $Record.PreviousPath
+    $previousRevision = if ($null -ne $Comparison -and $Comparison.staleCheckAvailable) { $Comparison.baseSha } else { "HEAD" }
+    $previousContent = Get-GitFileContent -Revision $previousRevision -RepoPath $Record.PreviousPath
     $previousInfo = if ($null -ne $previousContent) { Get-MetadataInfo -Content $previousContent -Config $config } else { $null }
     $previousSnapshot = if ($null -ne $previousInfo) { Get-MetadataSnapshot -MetadataInfo $previousInfo -Config $config } else { $null }
 
@@ -1581,17 +1933,34 @@ function Initialize-OrUpdateFile {
         return
     }
 
-    if (-not $currentInfo.HasMetadata -or $currentInfo.IsMalformed) {
+    if ($currentInfo.IsMalformed) {
+        Add-FailedFile -Report $Report -Path $repoPath -Rule "metadata block format" -Current "malformed" -Expected "metadata block intent can be determined safely"
+        return
+    }
+
+    if (-not $currentInfo.HasMetadata) {
+        $initialVersion = 1
+        $initialCreated = $now
+        $initialUpdated = $now
+        $reason = "missing metadata initialized"
+
+        if ($null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and (Test-IsTimestamp $previousSnapshot.Created) -and (Test-IsTimestamp $previousSnapshot.Updated)) {
+            $initialVersion = if ($bodyChanged) { [int64] $previousSnapshot.Version + 1 } else { [int64] $previousSnapshot.Version }
+            $initialCreated = $previousSnapshot.Created
+            $initialUpdated = if ($bodyChanged) { $now } else { $previousSnapshot.Updated }
+            $reason = if ($bodyChanged) { "body changed; metadata restored from history" } else { "metadata restored from history" }
+        }
+
         $values = @{
-            $config.versionField = 1
-            $config.createdField = $now
-            $config.updatedField = $now
+            $config.versionField = $initialVersion
+            $config.createdField = $initialCreated
+            $config.updatedField = $initialUpdated
         }
         $newContent = Set-MetadataContent -Content $textFile.Content -Config $config -Values $values -NewLine $textFile.NewLine
         if ($PSCmdlet.ShouldProcess($repoPath, "Initialize document metadata")) {
             Write-StrictUtf8Text -FullPath $Record.FullPath -Content $newContent -HasBom $textFile.HasBom
         }
-        Add-UpdatedFile -Report $Report -Path $repoPath -Format $config.metadataFormat -Placement $config.metadataPlacement -OldVersion $null -NewVersion 1 -OldCreated $null -NewCreated $now -OldUpdated $null -NewUpdated $now -Reason "missing metadata initialized"
+        Add-UpdatedFile -Report $Report -Path $repoPath -Format $config.metadataFormat -Placement $config.metadataPlacement -OldVersion $null -NewVersion $initialVersion -OldCreated $null -NewCreated $initialCreated -OldUpdated $null -NewUpdated $initialUpdated -Reason $reason
         return
     }
 
@@ -1630,6 +1999,22 @@ function Initialize-OrUpdateFile {
         $reason = if ($hasManualVersionIncrease) { "metadata repaired; manual version rebaseline" } else { "metadata repaired" }
         $shouldWrite = $true
     }
+    elseif ($bodyChanged) {
+        if (-not (Test-IsTimestamp $newCreated)) {
+            if ($hasValidPreviousTimestamps) {
+                $newCreated = $previousSnapshot.Created
+            }
+            else {
+                Add-FailedFile -Report $Report -Path $repoPath -Rule $config.createdField -Current $currentSnapshot.Created -Expected "valid created timestamp or safely restorable previous created timestamp"
+                return
+            }
+        }
+
+        $newVersion = [int64] $currentSnapshot.Version + 1
+        $newUpdated = $now
+        $reason = if ($validationErrors.Count -gt 0) { "body changed; metadata repaired" } else { "body changed" }
+        $shouldWrite = $true
+    }
     elseif ($validationErrors.Count -gt 0) {
         if ($null -eq $newVersion) {
             $newVersion = 1
@@ -1641,13 +2026,6 @@ function Initialize-OrUpdateFile {
             $newUpdated = $now
         }
         $reason = "metadata repaired"
-        $shouldWrite = $true
-    }
-    elseif ($bodyChanged) {
-        $newVersion = [int64] $currentSnapshot.Version + 1
-        $newCreated = $currentSnapshot.Created
-        $newUpdated = $now
-        $reason = "body changed"
         $shouldWrite = $true
     }
     elseif ($hasManualVersionIncrease) {
@@ -1673,6 +2051,128 @@ function Initialize-OrUpdateFile {
         }
         Add-UpdatedFile -Report $Report -Path $repoPath -Format $config.metadataFormat -Placement $config.metadataPlacement -OldVersion $currentSnapshot.Version -NewVersion $newVersion -OldCreated $currentSnapshot.Created -NewCreated $newCreated -OldUpdated $currentSnapshot.Updated -NewUpdated $newUpdated -Reason $reason
     }
+}
+
+function Analyze-GovernedFile {
+    param(
+        [object] $Record,
+        [hashtable] $Report,
+        [hashtable] $Comparison
+    )
+
+    $repoPath = $Record.Path
+    $config = $Record.Config
+    if (-not (Test-Path -LiteralPath $Record.FullPath -PathType Leaf)) {
+        Add-SkippedFile -Report $Report -Path $repoPath -Reason "deleted file"
+        return
+    }
+
+    try {
+        $textFile = Read-StrictUtf8Text -FullPath $Record.FullPath
+    }
+    catch {
+        Add-IneligibleFile -Report $Report -Path $repoPath -Reason "binary/non-text" -Category "ignoredBinaryOrNonText" -Current "not strict UTF-8 text" -Expected "strict UTF-8 text document" -Remediation "Convert this document to UTF-8 if it should be managed by doc-metadata."
+        return
+    }
+
+    $currentInfo = Get-MetadataInfo -Content $textFile.Content -Config $config
+    $currentSnapshot = Get-MetadataSnapshot -MetadataInfo $currentInfo -Config $config
+    $previousContent = if ($Comparison.staleCheckAvailable) { Get-GitFileContent -Revision $Comparison.baseSha -RepoPath $repoPath } else { $null }
+    $previousInfo = if ($null -ne $previousContent) { Get-MetadataInfo -Content $previousContent -Config $config } else { $null }
+    $previousSnapshot = if ($null -ne $previousInfo) { Get-MetadataSnapshot -MetadataInfo $previousInfo -Config $config } else { $null }
+    $bodyChanged = if ($null -ne $previousInfo) { $currentInfo.Body -ne $previousInfo.Body } else { $false }
+    $hasValidPreviousMetadata = $null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and (Test-IsTimestamp $previousSnapshot.Created) -and (Test-IsTimestamp $previousSnapshot.Updated)
+
+    if (-not $Comparison.staleCheckAvailable) {
+        Add-StaleSkippedFile -Report $Report -Path $repoPath -Reason $Comparison.reason
+    }
+
+    if ($currentInfo.IsMalformed) {
+        Add-UnrecoverableFile -Report $Report -Path $repoPath -Reason "malformed metadata cannot be safely repaired" -Current "malformed" -Expected "metadata block matching manifest format"
+        Add-FailedFile -Report $Report -Path $repoPath -Rule "metadata block format" -Current "malformed" -Expected "metadata block intent can be determined safely"
+        return
+    }
+
+    if (-not $currentInfo.HasMetadata) {
+        $categories = @("initialized")
+        $reason = "missing metadata can be initialized"
+        if ($hasValidPreviousMetadata) {
+            $categories += "restoredFromHistory"
+            $reason = "missing metadata can be restored from history"
+        }
+        if ($bodyChanged) {
+            $categories += "incremented"
+            $reason = "$reason; body changed"
+        }
+        Add-RepairableFile -Report $Report -Path $repoPath -Reason $reason -Categories $categories
+        return
+    }
+
+    [object[]] $validationErrors = @(Validate-FileMetadata -MetadataInfo $currentInfo -Config $config)
+    [object[]] $versionErrors = @($validationErrors | Where-Object { $_.Rule -eq $config.versionField })
+    if ($versionErrors.Count -gt 0) {
+        foreach ($error in $versionErrors) {
+            Add-UnrecoverableFile -Report $Report -Path $repoPath -Reason "invalid doc_version is not safely repairable" -Current $error.Current -Expected $error.Expected
+            Add-FailedFile -Report $Report -Path $repoPath -Rule $error.Rule -Current $error.Current -Expected $error.Expected
+        }
+        return
+    }
+
+    if ($null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and $null -ne $currentSnapshot.Version -and $currentSnapshot.Version -lt $previousSnapshot.Version) {
+        $rule = "doc_version must not decrease without explicit rebaseline approval"
+        Add-UnrecoverableFile -Report $Report -Path $repoPath -Reason $rule -Current $currentSnapshot.Version -Expected "greater than or equal to previous committed doc_version $($previousSnapshot.Version)"
+        Add-FailedFile -Report $Report -Path $repoPath -Rule $rule -Current $currentSnapshot.Version -Expected "greater than or equal to previous committed doc_version $($previousSnapshot.Version)"
+        return
+    }
+
+    [object[]] $timestampErrors = @($validationErrors | Where-Object { $_.Rule -in @($config.createdField, $config.updatedField) })
+    $hasManualVersionIncrease = $null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and $null -ne $currentSnapshot.Version -and $currentSnapshot.Version -gt $previousSnapshot.Version
+    $hasTimestampDriftFromPrevious = $null -ne $previousSnapshot -and ($currentSnapshot.Created -ne $previousSnapshot.Created -or $currentSnapshot.Updated -ne $previousSnapshot.Updated)
+
+    if ($bodyChanged) {
+        if ($timestampErrors.Count -gt 0 -and -not $hasValidPreviousMetadata -and -not (Test-IsTimestamp $currentSnapshot.Created)) {
+            Add-UnrecoverableFile -Report $Report -Path $repoPath -Reason "body changed but created timestamp cannot be safely restored" -Current $currentSnapshot.Created -Expected "valid created timestamp or valid previous metadata"
+            Add-FailedFile -Report $Report -Path $repoPath -Rule $config.createdField -Current $currentSnapshot.Created -Expected "valid created timestamp or safely restorable previous created timestamp"
+            return
+        }
+
+        $categories = @("incremented")
+        $reason = "body changed"
+        if ($timestampErrors.Count -gt 0) {
+            $categories += "repaired"
+            $reason = "body changed; metadata repaired"
+        }
+        Add-RepairableFile -Report $Report -Path $repoPath -Reason $reason -Categories $categories
+        return
+    }
+
+    if ($timestampErrors.Count -gt 0 -or $hasTimestampDriftFromPrevious) {
+        if ($hasValidPreviousMetadata) {
+            $reason = if ($hasManualVersionIncrease) { "metadata-only timestamp drift can be restored; manual version rebaseline preserved" } else { "metadata-only timestamp drift can be restored" }
+            Add-RepairableFile -Report $Report -Path $repoPath -Reason $reason -Categories @("restoredFromHistory", "repaired")
+            return
+        }
+
+        $rule = "created/updated timestamp drift could not be safely restored"
+        Add-UnrecoverableFile -Report $Report -Path $repoPath -Reason $rule -Current "created=$($currentSnapshot.Created); updated=$($currentSnapshot.Updated)" -Expected "valid previous committed created and updated timestamps"
+        Add-FailedFile -Report $Report -Path $repoPath -Rule $rule -Current "created=$($currentSnapshot.Created); updated=$($currentSnapshot.Updated)" -Expected "valid previous committed created and updated timestamps"
+        return
+    }
+
+    if ($hasManualVersionIncrease) {
+        Add-UnchangedFile -Report $Report -Path $repoPath -Reason "manual version rebaseline" -OldVersion $previousSnapshot.Version -NewVersion $currentSnapshot.Version
+        return
+    }
+
+    if ($validationErrors.Count -gt 0) {
+        foreach ($error in $validationErrors) {
+            Add-UnrecoverableFile -Report $Report -Path $repoPath -Reason "metadata validation failure is not safely repairable" -Current $error.Current -Expected $error.Expected
+            Add-FailedFile -Report $Report -Path $repoPath -Rule $error.Rule -Current $error.Current -Expected $error.Expected
+        }
+        return
+    }
+
+    Add-UnchangedFile -Report $Report -Path $repoPath -Reason "metadata valid"
 }
 
 function Test-GovernedFile {
@@ -1768,6 +2268,10 @@ function Complete-Report {
     )
 
     $uniqueFailedFiles = @($Report.failedFiles | ForEach-Object { $_.path } | Sort-Object -Unique)
+    $Report.analysis.repairRequired = $Report.analysis.repairableFiles.Count -gt 0
+    $Report.analysis.unrecoverableFailure = $Report.analysis.unrecoverableFiles.Count -gt 0 -or $uniqueFailedFiles.Count -gt 0
+    $Report.analysis.repairSafe = -not $Report.analysis.unrecoverableFailure
+    $Report.analysis.metadataValid = -not $Report.analysis.repairRequired -and -not $Report.analysis.unrecoverableFailure
     $Report.summaryCounts = @{
         totalGovernedFilesConsidered = $TotalGovernedConsidered
         totalGovernedFilesValidated = $TotalGovernedValidated
@@ -1775,6 +2279,13 @@ function Complete-Report {
         filesUnchanged = $Report.unchangedFiles.Count
         filesSkipped = $Report.skippedFiles.Count
         filesFailed = $uniqueFailedFiles.Count
+        filesIneligible = $Report.ineligibleFiles.Count
+        ignoredByEligibility = $Report.ignoredByEligibility.Count
+        ignoredByDeniedPath = $Report.ignoredByDeniedPath.Count
+        ignoredByDeniedExtension = $Report.ignoredByDeniedExtension.Count
+        ignoredBinaryOrNonText = $Report.ignoredBinaryOrNonText.Count
+        repairableFiles = $Report.analysis.repairableFiles.Count
+        unrecoverableFiles = $Report.analysis.unrecoverableFiles.Count
         staleCheckFilesConsidered = if ($Report.comparison.staleCheckAvailable) { $TotalGovernedValidated - $Report.staleCheckSkippedFiles.Count } else { 0 }
         staleCheckFilesSkipped = $Report.staleCheckSkippedFiles.Count
     }
@@ -1804,7 +2315,7 @@ function Write-HumanReport {
     Write-Host "Mode: $($Report.mode)"
     Write-Host "Repository root: $($Report.root)"
     Write-Host "Manifest path: $($Report.manifestPath)"
-    if ($Report.mode -eq "Check") {
+    if ($Report.mode -in @("Analyze", "Check")) {
         Write-Host "Comparison mode: $($Report.comparison.mode)"
         if ($null -ne $Report.comparison.baseSha) {
             Write-Host "Base SHA: $($Report.comparison.baseSha)"
@@ -1815,7 +2326,11 @@ function Write-HumanReport {
         Write-Host "Comparison note: $($Report.comparison.reason)"
     }
 
-    Write-Host "Summary: governed considered=$($Report.summaryCounts.totalGovernedFilesConsidered), validated=$($Report.summaryCounts.totalGovernedFilesValidated), updated=$($Report.summaryCounts.filesUpdated), unchanged=$($Report.summaryCounts.filesUnchanged), skipped=$($Report.summaryCounts.filesSkipped), failed=$($Report.summaryCounts.filesFailed), stale considered=$($Report.summaryCounts.staleCheckFilesConsidered), stale skipped=$($Report.summaryCounts.staleCheckFilesSkipped)"
+    if ($Report.mode -eq "Analyze") {
+        Write-Host "Analysis: metadataValid=$($Report.analysis.metadataValid), repairRequired=$($Report.analysis.repairRequired), repairSafe=$($Report.analysis.repairSafe), unrecoverableFailure=$($Report.analysis.unrecoverableFailure)"
+    }
+
+    Write-Host "Summary: governed considered=$($Report.summaryCounts.totalGovernedFilesConsidered), validated=$($Report.summaryCounts.totalGovernedFilesValidated), updated=$($Report.summaryCounts.filesUpdated), unchanged=$($Report.summaryCounts.filesUnchanged), skipped=$($Report.summaryCounts.filesSkipped), failed=$($Report.summaryCounts.filesFailed), ineligible=$($Report.summaryCounts.filesIneligible), repairable=$($Report.summaryCounts.repairableFiles), unrecoverable=$($Report.summaryCounts.unrecoverableFiles), stale considered=$($Report.summaryCounts.staleCheckFilesConsidered), stale skipped=$($Report.summaryCounts.staleCheckFilesSkipped)"
 
     $updatedRows = @($Report.updatedFiles | ForEach-Object {
         [pscustomobject]@{
@@ -1846,6 +2361,36 @@ function Write-HumanReport {
         }
     })
     Write-ReportTable -Title "Skipped files" -Rows $skippedRows
+
+    $ineligibleRows = @($Report.ineligibleFiles | ForEach-Object {
+        [pscustomobject]@{
+            Path = $_.path
+            Reason = $_.reason
+            Category = $_.category
+            Current = ConvertTo-DisplayValue $_.current
+            Remediation = $_.remediation
+        }
+    })
+    Write-ReportTable -Title "Ineligible manifest matches" -Rows $ineligibleRows
+
+    $repairableRows = @($Report.analysis.repairableFiles | ForEach-Object {
+        [pscustomobject]@{
+            Path = $_.path
+            Reason = $_.reason
+            Categories = (@($_.categories) -join ", ")
+        }
+    })
+    Write-ReportTable -Title "Repairable files" -Rows $repairableRows
+
+    $unrecoverableRows = @($Report.analysis.unrecoverableFiles | ForEach-Object {
+        [pscustomobject]@{
+            Path = $_.path
+            Reason = $_.reason
+            Current = ConvertTo-DisplayValue $_.current
+            Expected = $_.expected
+        }
+    })
+    Write-ReportTable -Title "Not safely repairable files" -Rows $unrecoverableRows
 
     $failureRows = @($Report.failedFiles | ForEach-Object {
         [pscustomobject]@{
@@ -1931,6 +2476,27 @@ function Write-GitHubSummary {
             Remediation = $_.remediation
         }
     })
+    $ineligibleGroupedRows = @($Report.ineligibleFiles | Group-Object -Property reason | ForEach-Object {
+        [pscustomobject]@{
+            Reason = $_.Name
+            Count = $_.Count
+        }
+    })
+    $repairableRows = @($Report.analysis.repairableFiles | ForEach-Object {
+        [pscustomobject]@{
+            Path = $_.path
+            Reason = $_.reason
+            Categories = (@($_.categories) -join ", ")
+        }
+    })
+    $unrecoverableRows = @($Report.analysis.unrecoverableFiles | ForEach-Object {
+        [pscustomobject]@{
+            Path = $_.path
+            Reason = $_.reason
+            Current = ConvertTo-DisplayValue $_.current
+            Expected = $_.expected
+        }
+    })
 
     $summary = [System.Text.StringBuilder]::new()
     [void] $summary.AppendLine("## Document metadata")
@@ -1940,12 +2506,25 @@ function Write-GitHubSummary {
     [void] $summary.AppendLine("- Updated: $($Report.summaryCounts.filesUpdated)")
     [void] $summary.AppendLine("- Skipped: $($Report.summaryCounts.filesSkipped)")
     [void] $summary.AppendLine("- Failed: $($Report.summaryCounts.filesFailed)")
+    [void] $summary.AppendLine("- Ineligible manifest matches: $($Report.summaryCounts.filesIneligible)")
+    if ($Report.mode -eq "Analyze") {
+        [void] $summary.AppendLine("- Metadata valid: $($Report.analysis.metadataValid)")
+        [void] $summary.AppendLine("- Repair required: $($Report.analysis.repairRequired)")
+        [void] $summary.AppendLine("- Repair safe: $($Report.analysis.repairSafe)")
+        [void] $summary.AppendLine("- Unrecoverable failure: $($Report.analysis.unrecoverableFailure)")
+    }
     [void] $summary.AppendLine("- Remediation: ``$script:RemediationCommand``")
     [void] $summary.AppendLine()
     [void] $summary.AppendLine("### Updated files")
     [void] $summary.AppendLine((ConvertTo-MarkdownTable -Headers @("Path", "Format", "Placement", "OldVersion", "NewVersion", "OldUpdated", "NewUpdated", "Reason") -Rows $updatedRows))
     [void] $summary.AppendLine("### Skipped files")
     [void] $summary.AppendLine((ConvertTo-MarkdownTable -Headers @("Path", "Reason") -Rows $skippedRows))
+    [void] $summary.AppendLine("### Ineligible manifest matches by reason")
+    [void] $summary.AppendLine((ConvertTo-MarkdownTable -Headers @("Reason", "Count") -Rows $ineligibleGroupedRows))
+    [void] $summary.AppendLine("### Repairable files")
+    [void] $summary.AppendLine((ConvertTo-MarkdownTable -Headers @("Path", "Reason", "Categories") -Rows $repairableRows))
+    [void] $summary.AppendLine("### Not safely repairable files")
+    [void] $summary.AppendLine((ConvertTo-MarkdownTable -Headers @("Path", "Reason", "Current", "Expected") -Rows $unrecoverableRows))
     [void] $summary.AppendLine("### Failures")
     [void] $summary.AppendLine((ConvertTo-MarkdownTable -Headers @("Path", "Rule", "Current", "Expected", "Remediation") -Rows $failureRows))
 
@@ -1989,9 +2568,18 @@ function Invoke-Main {
         $manifest = Read-Manifest -ManifestFile $script:ManifestFullPath
         [object[]] $includeValues = @(Get-NonNullValues -Values $Include)
         $bootstrapPatterns = if ($Mode -eq "Bootstrap" -and $includeValues.Length -gt 0) { $includeValues } else { @() }
-        $governedFiles = Resolve-GovernedFiles -Manifest $manifest -BootstrapIncludePatterns $bootstrapPatterns
+        $governedFiles = Resolve-GovernedFiles -Manifest $manifest -BootstrapIncludePatterns $bootstrapPatterns -Report $report
 
-        if ($Mode -eq "Check") {
+        if ($Mode -eq "Analyze") {
+            $comparison = Get-ComparisonInfo -RequestedEventName $EventName -RequestedEventPayloadPath $EventPayloadPath -RequestedHeadSha $HeadSha -RequestedBaseSha $BaseSha
+            $report.comparison = $comparison
+            $selected = @($governedFiles.Values | Sort-Object -Property Path)
+            foreach ($record in $selected) {
+                Analyze-GovernedFile -Record $record -Report $report -Comparison $comparison
+            }
+            Complete-Report -Report $report -TotalGovernedConsidered $selected.Count -TotalGovernedValidated $selected.Count
+        }
+        elseif ($Mode -eq "Check") {
             $comparison = Get-ComparisonInfo -RequestedEventName $EventName -RequestedEventPayloadPath $EventPayloadPath -RequestedHeadSha $HeadSha -RequestedBaseSha $BaseSha
             $report.comparison = $comparison
             $selected = @($governedFiles.Values | Sort-Object -Property Path)
@@ -2001,9 +2589,14 @@ function Invoke-Main {
             Complete-Report -Report $report -TotalGovernedConsidered $selected.Count -TotalGovernedValidated $selected.Count
         }
         else {
-            $selected = Get-SelectedGovernedRecords -Manifest $manifest -GovernedFiles $governedFiles -Report $report -ModeValue $Mode
+            $repairComparison = $null
+            if ($Mode -eq "Update" -and (-not [string]::IsNullOrWhiteSpace($EventName))) {
+                $repairComparison = Get-ComparisonInfo -RequestedEventName $EventName -RequestedEventPayloadPath $EventPayloadPath -RequestedHeadSha $HeadSha -RequestedBaseSha $BaseSha
+                $report.comparison = $repairComparison
+            }
+            $selected = @(Get-SelectedGovernedRecords -Manifest $manifest -GovernedFiles $governedFiles -Report $report -ModeValue $Mode)
             foreach ($record in $selected) {
-                Initialize-OrUpdateFile -Record $record -Report $report -ModeValue $Mode
+                Initialize-OrUpdateFile -Record $record -Report $report -ModeValue $Mode -Comparison $repairComparison
             }
             Complete-Report -Report $report -TotalGovernedConsidered $selected.Count
         }
@@ -2021,6 +2614,10 @@ function Invoke-Main {
         Write-HumanReport -Report $report
         Write-GitHubSummary -Report $report
         Write-MachineReports -Report $report
+    }
+
+    if ($Mode -eq "Analyze") {
+        exit 0
     }
 
     if ($report.failedFiles.Count -gt 0) {

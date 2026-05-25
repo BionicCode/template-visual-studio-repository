@@ -43,9 +43,120 @@
         "$ref": "#/$defs/override"
       },
       "default": []
+    },
+    "documentEligibility": {
+      "$ref": "#/$defs/documentEligibility",
+      "description": "Manifest-level document eligibility policy. Manifest matches that are not eligible are reported but never mutated."
     }
   },
   "$defs": {
+    "extensionValue": {
+      "type": "string",
+      "description": "File extension value. Values may omit the leading dot; the script normalizes to leading-dot lowercase.",
+      "pattern": "^\\.?[A-Za-z0-9][A-Za-z0-9._+-]*$",
+      "not": {
+        "anyOf": [
+          {
+            "pattern": "[*?\\[\\]/\\\\]"
+          },
+          {
+            "const": "."
+          }
+        ]
+      },
+      "examples": [
+        ".md",
+        "adoc"
+      ]
+    },
+    "extensionArray": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/extensionValue"
+      },
+      "uniqueItems": true
+    },
+    "documentEligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Filters manifest-matched files to document-like text files that may be analyzed or repaired.",
+      "properties": {
+        "allowedExtensions": {
+          "$ref": "#/$defs/extensionArray",
+          "description": "Base allowed document extensions. If omitted, the script uses .md, .markdown, and .txt. If present, this replaces the default base list.",
+          "default": [
+            ".md",
+            ".markdown",
+            ".txt"
+          ]
+        },
+        "additionalAllowedExtensions": {
+          "$ref": "#/$defs/extensionArray",
+          "description": "Additional extensions appended to the effective allowed extension list.",
+          "default": []
+        },
+        "deniedExtensions": {
+          "$ref": "#/$defs/extensionArray",
+          "description": "Extensions that are never eligible. Denied extensions win over allowed and additional extensions.",
+          "default": []
+        },
+        "deniedPaths": {
+          "type": "array",
+          "description": "Repository-relative forward-slash path or glob patterns that are never eligible, even when the extension is allowed.",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "not": {
+              "anyOf": [
+                {
+                  "pattern": "^[A-Za-z]:"
+                },
+                {
+                  "pattern": "^/"
+                },
+                {
+                  "pattern": "\\\\"
+                },
+                {
+                  "pattern": "(^|/)\\.\\.(/|$)"
+                }
+              ]
+            }
+          },
+          "default": []
+        },
+        "allowExtensionless": {
+          "type": "boolean",
+          "description": "Whether extensionless manifest matches are eligible for document metadata.",
+          "default": false
+        },
+        "failOnIneligibleMatches": {
+          "type": "boolean",
+          "description": "When true, manifest matches rejected by documentEligibility fail validation instead of only being reported.",
+          "default": false
+        }
+      },
+      "examples": [
+        {
+          "allowedExtensions": [
+            ".md",
+            ".markdown",
+            ".txt"
+          ],
+          "additionalAllowedExtensions": [
+            ".adoc"
+          ],
+          "deniedExtensions": [
+            ".log"
+          ],
+          "deniedPaths": [
+            "docs/generated/**"
+          ],
+          "allowExtensionless": false,
+          "failOnIneligibleMatches": false
+        }
+      ]
+    },
     "metadataFormat": {
       "type": "string",
       "description": "Metadata block format used for matched files.",
