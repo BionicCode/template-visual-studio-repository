@@ -1,0 +1,291 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/doc-metadata-manifest.schema.json",
+  "title": "Document metadata manifest",
+  "description": "Repository-local manifest that defines which text files participate in document metadata automation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "version",
+    "defaults",
+    "include",
+    "exclude"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Relative or absolute URI of this manifest schema.",
+      "examples": [
+        "./doc-metadata-manifest.schema.json"
+      ]
+    },
+    "version": {
+      "description": "Manifest contract version. Version 1 is the only supported value.",
+      "const": 1
+    },
+    "defaults": {
+      "$ref": "#/$defs/requiredMetadataSettings",
+      "description": "Default metadata behavior for files matched by top-level include patterns."
+    },
+    "include": {
+      "$ref": "#/$defs/patternArray",
+      "description": "Repository-root-relative patterns for governed files. These patterns are authoritative."
+    },
+    "exclude": {
+      "$ref": "#/$defs/patternArray",
+      "description": "Repository-root-relative patterns excluded from governance. Excludes win over includes."
+    },
+    "overrides": {
+      "type": "array",
+      "description": "Optional per-pattern metadata settings. Override include patterns also add governed files.",
+      "items": {
+        "$ref": "#/$defs/override"
+      },
+      "default": []
+    }
+  },
+  "$defs": {
+    "metadataFormat": {
+      "type": "string",
+      "description": "Metadata block format used for matched files.",
+      "enum": [
+        "yaml-front-matter",
+        "comment-block"
+      ]
+    },
+    "metadataPlacement": {
+      "type": "string",
+      "description": "Where the metadata block is placed in the file. YAML front matter supports top placement only.",
+      "enum": [
+        "top",
+        "bottom"
+      ],
+      "examples": [
+        "top",
+        "bottom"
+      ]
+    },
+    "patternEntry": {
+      "description": "A repository-root-relative glob string, or a future-compatible object entry with a pattern property.",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "examples": [
+            "README.md",
+            "docs/**/*.md"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "required": [
+            "pattern"
+          ],
+          "properties": {
+            "pattern": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Repository-root-relative glob pattern."
+            }
+          }
+        }
+      ]
+    },
+    "patternArray": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/patternEntry"
+      }
+    },
+    "requiredMetadataSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metadataFormat",
+        "metadataPlacement",
+        "versionField",
+        "createdField",
+        "updatedField",
+        "versioningMode",
+        "timestampFormat"
+      ],
+      "properties": {
+        "metadataFormat": {
+          "$ref": "#/$defs/metadataFormat"
+        },
+        "metadataPlacement": {
+          "$ref": "#/$defs/metadataPlacement"
+        },
+        "versionField": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Field name that stores the positive integer document revision.",
+          "examples": [
+            "doc_version"
+          ]
+        },
+        "createdField": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Field name that stores the immutable metadata initialization timestamp.",
+          "examples": [
+            "created"
+          ]
+        },
+        "updatedField": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Field name that stores the last body-content-change timestamp.",
+          "examples": [
+            "updated"
+          ]
+        },
+        "versioningMode": {
+          "type": "string",
+          "description": "Version increment policy.",
+          "enum": [
+            "body-content-change"
+          ]
+        },
+        "timestampFormat": {
+          "type": "string",
+          "description": "Timestamp serialization format.",
+          "enum": [
+            "iso-8601-offset"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "metadataFormat": {
+                "const": "yaml-front-matter"
+              }
+            },
+            "required": [
+              "metadataFormat"
+            ]
+          },
+          "then": {
+            "properties": {
+              "metadataPlacement": {
+                "const": "top"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "override": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "include": {
+          "$ref": "#/$defs/patternArray",
+          "description": "Override include patterns. These also add governed files."
+        },
+        "exclude": {
+          "$ref": "#/$defs/patternArray",
+          "description": "Override-local exclude patterns."
+        },
+        "metadataFormat": {
+          "$ref": "#/$defs/metadataFormat"
+        },
+        "metadataPlacement": {
+          "$ref": "#/$defs/metadataPlacement"
+        },
+        "versionField": {
+          "type": "string",
+          "minLength": 1
+        },
+        "createdField": {
+          "type": "string",
+          "minLength": 1
+        },
+        "updatedField": {
+          "type": "string",
+          "minLength": 1
+        },
+        "versioningMode": {
+          "type": "string",
+          "enum": [
+            "body-content-change"
+          ]
+        },
+        "timestampFormat": {
+          "type": "string",
+          "enum": [
+            "iso-8601-offset"
+          ]
+        },
+        "commentStart": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Opening marker for comment-block metadata."
+        },
+        "commentLinePrefix": {
+          "type": "string",
+          "description": "Optional prefix written before each metadata line inside a comment block."
+        },
+        "commentEnd": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Closing marker for comment-block metadata."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "metadataFormat": {
+                "const": "comment-block"
+              }
+            },
+            "required": [
+              "metadataFormat"
+            ]
+          },
+          "then": {
+            "required": [
+              "commentStart",
+              "commentEnd"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "metadataFormat": {
+                "const": "yaml-front-matter"
+              }
+            },
+            "required": [
+              "metadataFormat"
+            ]
+          },
+          "then": {
+            "properties": {
+              "metadataPlacement": {
+                "const": "top"
+              }
+            }
+          }
+        }
+      ],
+      "examples": [
+        {
+          "include": [
+            "specs/**/*.txt"
+          ],
+          "metadataFormat": "comment-block",
+          "metadataPlacement": "bottom",
+          "commentStart": "<!-- doc-metadata",
+          "commentEnd": "-->"
+        }
+      ]
+    }
+  }
+}

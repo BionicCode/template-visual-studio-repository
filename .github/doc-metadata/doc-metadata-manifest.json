@@ -1,0 +1,43 @@
+{
+  "$schema": "./doc-metadata-manifest.schema.json",
+  "version": 1,
+  "defaults": {
+    "metadataFormat": "yaml-front-matter",
+    "metadataPlacement": "top",
+    "versionField": "doc_version",
+    "createdField": "created",
+    "updatedField": "updated",
+    "versioningMode": "body-content-change",
+    "timestampFormat": "iso-8601-offset"
+  },
+  "include": [
+    "README.md",
+    "docs/**/*.md",
+    "docs/**/*.markdown",
+    ".github/doc-metadata/documentation/**/*.md"
+  ],
+  "exclude": [
+    "**/.git/**",
+    "**/.vs/**",
+    "**/.idea/**",
+    "**/bin/**",
+    "**/obj/**",
+    "**/node_modules/**",
+    "**/packages/**",
+    "**/artifacts/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/out/**"
+  ],
+  "overrides": [
+    {
+      "include": [
+        "specs/**/*.txt"
+      ],
+      "metadataFormat": "comment-block",
+      "metadataPlacement": "bottom",
+      "commentStart": "<!-- doc-metadata",
+      "commentEnd": "-->"
+    }
+  ]
+}

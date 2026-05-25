@@ -1,0 +1,48 @@
+name: Document metadata
+
+on:
+  pull_request:
+    paths:
+      - "README.md"
+      - "docs/**"
+      - "specs/**"
+      - ".github/doc-metadata/**"
+      - ".github/scripts/doc-metadata/**"
+      - ".github/workflows/doc-metadata.yml"
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "README.md"
+      - "docs/**"
+      - "specs/**"
+      - ".github/doc-metadata/**"
+      - ".github/scripts/doc-metadata/**"
+      - ".github/workflows/doc-metadata.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-document-metadata:
+    name: Check document metadata
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check document metadata
+        shell: pwsh
+        run: |
+          ./.github/scripts/doc-metadata/update-doc-metadata.ps1 `
+            -Mode Check `
+            -Root . `
+            -EventName "${{ github.event_name }}" `
+            -EventPayloadPath "${{ github.event_path }}" `
+            -HeadSha "${{ github.sha }}"
