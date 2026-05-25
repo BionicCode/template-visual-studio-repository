@@ -1,6 +1,6 @@
 # ManifestDocument
 
-Top-level JSON object consumed by the reusable sync workflow.
+The top-level manifest object. This type has no parent.
 
 ## Shape
 
@@ -13,7 +13,7 @@ Top-level JSON object consumed by the reusable sync workflow.
       "source_repo": "BionicCode/template-visual-studio-repository",
       "source_ref": "main",
       "source_path": "README.md",
-      "target_path": "README.md",
+      "target_directory": "",
       "direction": "source_to_target",
       "lifecycle_policy": "seed_once",
       "uniqueness_policy": "none",
@@ -23,30 +23,18 @@ Top-level JSON object consumed by the reusable sync workflow.
 }
 ```
 
-## Placement
+## Fields
 
-| Property | Value |
-|---|---|
-| Placement | Top-level object |
-| Valid parent | None |
-| Parent property | None |
-
-## Attributes
-
-| Attribute | Required | Type | Description |
+| Field | Required | Type | Description |
 |---|---:|---|---|
-| `$schema` | No | string | Schema path used by editors and local tooling. It does not decide the authoritative runtime schema. |
-| `schema_version` | Yes | number | Manifest schema version. The current version supports only `1`. |
-| `entries` | Yes | [`ManifestEntry[]`](manifest-entry.md) | Non-empty list of strict source-to-target mappings. |
+| `$schema` | No | string | Relative schema path for editor tooling. |
+| `schema_version` | Yes | integer | Must be `1`. |
+| `entries` | Yes | `ManifestEntry[]` | Non-empty managed entry list. |
 
 ## Child Values
 
-| Child Property | Child Type | Description |
+| Child | Parent property | Type |
 |---|---|---|
-| `entries[]` | [`ManifestEntry`](manifest-entry.md) | One managed-file mapping. |
+| Managed entries | `entries[]` | `ManifestEntry` |
 
-## Notes
-
-- The manifest must be an object, not an array.
-- Unknown top-level properties are rejected.
-- Runtime validation uses the schema bundled with the reusable workflow version being executed.
+Old top-level array manifests are rejected. Wrap the array under `entries` and add `schema_version`.
