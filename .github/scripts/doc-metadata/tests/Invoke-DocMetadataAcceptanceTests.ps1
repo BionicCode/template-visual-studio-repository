@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 
 $RepositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\..\.."))
 $ToolingSource = Join-Path $RepositoryRoot ".github\scripts\doc-metadata"
-$PublicSurfaceSource = Join-Path $RepositoryRoot ".github\doc-metadata"
+$PublicSurfaceSource = Join-Path $RepositoryRoot ".github\tools\doc-metadata"
 $WorkflowPath = Join-Path $RepositoryRoot ".github\workflows\doc-metadata.yml"
 
 $script:Passed = 0
@@ -105,8 +105,9 @@ function New-TestRepository {
     $root = Join-Path ([System.IO.Path]::GetTempPath()) "doc-metadata-tests-$([guid]::NewGuid().ToString('N'))"
     New-Item -ItemType Directory -Path $root | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $root ".github\scripts") -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $root ".github\tools") -Force | Out-Null
     Copy-Item -LiteralPath $ToolingSource -Destination (Join-Path $root ".github\scripts\doc-metadata") -Recurse
-    Copy-Item -LiteralPath $PublicSurfaceSource -Destination (Join-Path $root ".github\doc-metadata") -Recurse
+    Copy-Item -LiteralPath $PublicSurfaceSource -Destination (Join-Path $root ".github\tools\doc-metadata") -Recurse
     Invoke-Git -Root $root -Arguments @("init", "-q") | Out-Null
     Invoke-Git -Root $root -Arguments @("config", "user.email", "doc-tests@example.invalid") | Out-Null
     Invoke-Git -Root $root -Arguments @("config", "user.name", "Doc Metadata Tests") | Out-Null
@@ -306,7 +307,7 @@ Invoke-Test "Invalid manifest fails before touching files" {
     $root = New-TestRepository
     $readme = Join-Path $root "README.md"
     Write-Utf8File -Path $readme -Content "# Title`n"
-    $manifest = Join-Path $root ".github\doc-metadata\doc-metadata-manifest.json"
+    $manifest = Join-Path $root ".github\tools\doc-metadata\doc-metadata-manifest.json"
     $json = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json -Depth 32
     $json.PSObject.Properties.Remove("defaults")
     $json | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath $manifest -Encoding utf8NoBOM
@@ -319,7 +320,7 @@ Invoke-Test "Invalid manifest fails before touching files" {
 
 Invoke-Test "Manifest rejects front matter at bottom and accepts comment block bottom" {
     $root = New-TestRepository
-    $manifest = Join-Path $root ".github\doc-metadata\doc-metadata-manifest.json"
+    $manifest = Join-Path $root ".github\tools\doc-metadata\doc-metadata-manifest.json"
     $json = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json -Depth 32
     $json.defaults.metadataPlacement = "bottom"
     $json | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath $manifest -Encoding utf8NoBOM

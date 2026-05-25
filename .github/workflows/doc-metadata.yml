@@ -6,7 +6,7 @@ on:
       - "README.md"
       - "docs/**"
       - "specs/**"
-      - ".github/doc-metadata/**"
+      - ".github/tools/doc-metadata/**"
       - ".github/scripts/doc-metadata/**"
       - ".github/workflows/doc-metadata.yml"
   push:
@@ -17,7 +17,7 @@ on:
       - "README.md"
       - "docs/**"
       - "specs/**"
-      - ".github/doc-metadata/**"
+      - ".github/tools/doc-metadata/**"
       - ".github/scripts/doc-metadata/**"
       - ".github/workflows/doc-metadata.yml"
   workflow_dispatch:

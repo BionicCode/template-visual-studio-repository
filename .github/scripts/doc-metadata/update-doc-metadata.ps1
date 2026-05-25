@@ -7,7 +7,7 @@ param(
 
     [string] $Root,
 
-    [string] $ManifestPath = ".github/doc-metadata/doc-metadata-manifest.json",
+    [string] $ManifestPath = ".github/tools/doc-metadata/doc-metadata-manifest.json",
 
     [string[]] $Include = @(),
 
@@ -1538,7 +1538,7 @@ function Initialize-OrUpdateFile {
         $textFile = Read-StrictUtf8Text -FullPath $Record.FullPath
     }
     catch {
-        Add-FailedFile -Report $Report -Path $repoPath -Rule "UTF-8" -Current "invalid UTF-8" -Expected "valid UTF-8 text" -Remediation "Convert the file to UTF-8 or exclude it from .github/doc-metadata/doc-metadata-manifest.json."
+        Add-FailedFile -Report $Report -Path $repoPath -Rule "UTF-8" -Current "invalid UTF-8" -Expected "valid UTF-8 text" -Remediation "Convert the file to UTF-8 or exclude it from .github/tools/doc-metadata/doc-metadata-manifest.json."
         return
     }
 
@@ -1670,7 +1670,7 @@ function Test-GovernedFile {
         $textFile = Read-StrictUtf8Text -FullPath $Record.FullPath
     }
     catch {
-        Add-FailedFile -Report $Report -Path $repoPath -Rule "UTF-8" -Current "invalid UTF-8" -Expected "valid UTF-8 text" -Remediation "Convert the file to UTF-8 or exclude it from .github/doc-metadata/doc-metadata-manifest.json."
+        Add-FailedFile -Report $Report -Path $repoPath -Rule "UTF-8" -Current "invalid UTF-8" -Expected "valid UTF-8 text" -Remediation "Convert the file to UTF-8 or exclude it from .github/tools/doc-metadata/doc-metadata-manifest.json."
         return
     }
 
@@ -1987,7 +1987,7 @@ function Invoke-Main {
     }
     catch {
         if ($null -eq $manifest) {
-            Add-FailedFile -Report $report -Path $manifestReportPath -Rule "manifest validation" -Current $_.Exception.Message -Expected "valid document metadata manifest" -Remediation "Fix .github/doc-metadata/doc-metadata-manifest.json and rerun the command."
+            Add-FailedFile -Report $report -Path $manifestReportPath -Rule "manifest validation" -Current $_.Exception.Message -Expected "valid document metadata manifest" -Remediation "Fix .github/tools/doc-metadata/doc-metadata-manifest.json and rerun the command."
         }
         else {
             Add-FailedFile -Report $report -Path "." -Rule "execution" -Current $_.Exception.Message -Expected "document metadata command completes successfully" -Remediation "Review the reported error, verify comparison inputs, and rerun the command."

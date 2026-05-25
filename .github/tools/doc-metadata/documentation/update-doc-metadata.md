@@ -17,7 +17,7 @@ updated: 2026-05-25T12:45:00+02:00
 ---
 ```
 
-The manifest at `.github/doc-metadata/doc-metadata-manifest.json` is the source of truth. Workflow `paths` filters only decide when GitHub Actions starts; they do not decide which files are governed.
+The manifest at `.github/tools/doc-metadata/doc-metadata-manifest.json` is the source of truth. Workflow `paths` filters only decide when GitHub Actions starts; they do not decide which files are governed.
 
 ## Metadata Rules
 
@@ -97,7 +97,7 @@ Add governed Markdown files by extending the manifest include list:
 "include": [
   "README.md",
   "docs/**/*.md",
-  ".github/doc-metadata/documentation/**/*.md"
+  ".github/tools/doc-metadata/documentation/**/*.md"
 ]
 ```
 

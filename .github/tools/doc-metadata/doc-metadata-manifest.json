@@ -14,7 +14,7 @@
     "README.md",
     "docs/**/*.md",
     "docs/**/*.markdown",
-    ".github/doc-metadata/documentation/**/*.md"
+    ".github/tools/doc-metadata/documentation/**/*.md"
   ],
   "exclude": [
     "**/.git/**",
