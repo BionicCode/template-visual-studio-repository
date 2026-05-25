@@ -51,7 +51,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          manifest_path=".github/sync-config/sync-manifest.json"
+          manifest_path=".github/tools/sync-config/sync-manifest.json"
 
           if [ ! -f "$manifest_path" ]; then
             echo "manifest_exists=false" >> "$GITHUB_OUTPUT"
@@ -79,7 +79,7 @@ jobs:
       - name: Report missing PR manifest
         shell: bash
         run: |
-          echo "::error::.github/sync-config/sync-manifest.json is missing. Run workflow_dispatch from the repository default branch or let a default-branch push/schedule initialize it."
+          echo "::error::.github/tools/sync-config/sync-manifest.json is missing. Run workflow_dispatch from the repository default branch or let a default-branch push/schedule initialize it."
           exit 1
 
   init-managed-file-sync:

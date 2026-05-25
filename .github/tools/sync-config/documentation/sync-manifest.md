@@ -23,7 +23,7 @@
       "source_repo": "BionicCode/workflows",
       "source_ref": "main",
       "source_glob": ".github/scripts/sync-files-from-manifest/documentation/**/*.md",
-      "target_directory": ".github/sync-config/documentation/",
+      "target_directory": ".github/tools/sync-config/documentation/",
       "glob": {
         "recursive": true,
         "include_hidden": false
@@ -159,7 +159,7 @@ Recursive documentation sync:
   "source_repo": "BionicCode/workflows",
   "source_ref": "main",
   "source_glob": ".github/scripts/sync-files-from-manifest/documentation/**/*.md",
-  "target_directory": ".github/sync-config/documentation/",
+  "target_directory": ".github/tools/sync-config/documentation/",
   "glob": {
     "recursive": true
   },
@@ -207,7 +207,7 @@ Name-fragment filter:
   "source_repo": "BionicCode/workflows",
   "source_ref": "main",
   "source_glob": ".github/scripts/sync-files-from-manifest/documentation/sync-manifest*.md",
-  "target_directory": ".github/sync-config/documentation/",
+  "target_directory": ".github/tools/sync-config/documentation/",
   "direction": "source_to_target",
   "lifecycle_policy": "enforce",
   "uniqueness_policy": "none",

@@ -6,7 +6,7 @@
       "source_repo": "BionicCode/workflows",
       "source_ref": "main",
       "source_glob": ".github/scripts/sync-files-from-manifest/documentation/**/*.*",
-      "target_directory": ".github/sync-config/documentation/",
+      "target_directory": ".github/tools/sync-config/documentation/",
       "glob": {
         "recursive": true,
         "include_hidden": false
@@ -20,7 +20,7 @@
       "source_repo": "BionicCode/workflows",
       "source_ref": "main",
       "source_path": ".github/scripts/sync-files-from-manifest/schema/sync-manifest.schema.json",
-      "target_directory": ".github/sync-config/",
+      "target_directory": ".github/tools/sync-config/",
       "direction": "source_to_target",
       "lifecycle_policy": "enforce",
       "uniqueness_policy": "none",
