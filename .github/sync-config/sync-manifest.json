@@ -7,6 +7,10 @@
       "source_ref": "main",
       "source_glob": ".github/scripts/sync-files-from-manifest/documentation/**/*.*",
       "target_directory": ".github/sync-config/documentation/",
+      "glob": {
+        "recursive": true,
+        "include_hidden": false
+      },
       "direction": "source_to_target",
       "lifecycle_policy": "enforce",
       "uniqueness_policy": "none",
@@ -21,6 +25,10 @@
       "source_ref": "main",
       "source_path": ".github/scripts/sync-files-from-manifest/schemasync-manifest.schema.json",
       "target_directory": ".github/sync-config/",
+      "glob": {
+        "recursive": true,
+        "include_hidden": false
+      },
       "direction": "source_to_target",
       "lifecycle_policy": "enforce",
       "uniqueness_policy": "none",
