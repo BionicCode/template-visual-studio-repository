@@ -12,9 +12,18 @@
   },
   "include": [
     "README.md",
+    "*AGENT*.md",
+    "*DOCUMENTATION*.md",
     "docs/**/*.md",
     "docs/**/*.markdown",
-    ".github/tools/doc-metadata/documentation/**/*.md"
+    "test/*AGENT*.md",
+    "src/*AGENT*.md",
+    ".github/tools/doc-metadata/documentation/**/*.md",
+    ".github/tools/sync-config/documentation/**/*.md",
+    ".github/instructions/**/*.md",
+    ".github/*AGENT*.md",
+    ".github/*COPILOT*.md",
+    ".github/*copilot*.md"
   ],
   "exclude": [
     "**/.git/**",

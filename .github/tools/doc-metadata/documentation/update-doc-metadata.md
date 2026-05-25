@@ -103,6 +103,16 @@ Add governed Markdown files by extending the manifest include list:
 
 Generated, vendored, dependency, build, and artifact directories should remain excluded through the manifest `exclude` list. Excludes win over includes, and explicit `-Path` restrictions cannot bypass manifest exclusions.
 
+### Glob Semantics
+
+Manifest patterns are matched against repository-root-relative paths using `/` separators.
+
+`*` matches characters within a single path segment and does not cross directory separators. For example, `*AGENT*.md` matches root-level files such as `AGENTS.md`, `AGENT_GUARDRAILS.md`, and `NET_AGENTS.md`, but it does not match `docs/AGENTS.md`.
+
+Use `**/` for recursive matching. For example, `**/*AGENT*.md` matches both root-level files and nested files such as `docs/AGENTS.md`.
+
+Matching is case-sensitive. If a repository needs to govern case variants such as `agents.md`, add explicit patterns for those variants.
+
 ## Optional Pre-Commit Hook
 
 Install the hook manually:

@@ -335,6 +335,47 @@ Invoke-Test "Manifest rejects front matter at bottom and accepts comment block b
     Assert-True ($valid.Stdout -notmatch "cannot use metadataPlacement 'bottom' with yaml-front-matter") "Comment-block bottom override should be accepted by manifest validation."
 }
 
+Invoke-Test "Filename glob matches root agent files but not nested or lowercase variants" {
+    $root = New-TestRepository
+    foreach ($fileName in @("AGENTS.md", "AGENT_GUARDRAILS.md", "NET_AGENTS.md", "agents.md")) {
+        Write-Utf8File -Path (Join-Path $root $fileName) -Content "# $fileName`n"
+    }
+    Write-Utf8File -Path (Join-Path $root "docs\AGENTS.md") -Content "# Nested AGENTS`n"
+    $manifest = Join-Path $root ".github\tools\doc-metadata\doc-metadata-manifest.json"
+    $json = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json -Depth 32
+    $json.include = @("*AGENT*.md")
+    $json | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath $manifest -Encoding utf8NoBOM
+
+    $result = Invoke-Tool -Root $root -Mode "Bootstrap" -ExtraArguments @("-ReportOutputPath", "report.json")
+
+    Assert-Equal 0 $result.ExitCode "Bootstrap should pass."
+    $report = Read-JsonFile (Join-Path $root "report.json")
+    $updatedPaths = @($report.updatedFiles.path)
+    Assert-True ($updatedPaths -contains "AGENTS.md") "*AGENT*.md should match AGENTS.md."
+    Assert-True ($updatedPaths -contains "AGENT_GUARDRAILS.md") "*AGENT*.md should match AGENT_GUARDRAILS.md."
+    Assert-True ($updatedPaths -contains "NET_AGENTS.md") "*AGENT*.md should match NET_AGENTS.md."
+    Assert-True ($updatedPaths -notcontains "docs/AGENTS.md") "*AGENT*.md should not cross directory separators."
+    Assert-True ($updatedPaths -notcontains "agents.md") "Matching is case-sensitive, so lowercase agents.md should not match *AGENT*.md."
+}
+
+Invoke-Test "Recursive filename glob matches nested agent files" {
+    $root = New-TestRepository
+    Write-Utf8File -Path (Join-Path $root "AGENTS.md") -Content "# Root AGENTS`n"
+    Write-Utf8File -Path (Join-Path $root "docs\AGENTS.md") -Content "# Nested AGENTS`n"
+    $manifest = Join-Path $root ".github\tools\doc-metadata\doc-metadata-manifest.json"
+    $json = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json -Depth 32
+    $json.include = @("**/*AGENT*.md")
+    $json | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath $manifest -Encoding utf8NoBOM
+
+    $result = Invoke-Tool -Root $root -Mode "Bootstrap" -ExtraArguments @("-ReportOutputPath", "report.json")
+
+    Assert-Equal 0 $result.ExitCode "Bootstrap should pass."
+    $report = Read-JsonFile (Join-Path $root "report.json")
+    $updatedPaths = @($report.updatedFiles.path)
+    Assert-True ($updatedPaths -contains "AGENTS.md") "**/*AGENT*.md should match root-level AGENTS.md."
+    Assert-True ($updatedPaths -contains "docs/AGENTS.md") "**/*AGENT*.md should match nested docs/AGENTS.md."
+}
+
 Invoke-Test "GitHub summary is written when requested" {
     $root = New-TestRepository
     Write-Utf8File -Path (Join-Path $root "README.md") -Content "# Title`n"
