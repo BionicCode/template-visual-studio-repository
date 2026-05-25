@@ -1,45 +1,42 @@
 # RepoRelativeFilePath
 
-Repository-relative file path string.
-
-## Placement
+Repository-relative POSIX file path used by `ManifestEntry.source_path`.
 
 | Property | Value |
 |---|---|
-| Placement | Scalar string |
-| Valid parent | [`ManifestEntry`](manifest-entry.md) |
-| Parent properties | `source_path`, `target_path` |
+| Kind | Scalar string |
+| Valid parent | `ManifestEntry` |
+| Parent property | `source_path` |
 
-## Examples
+Rules:
 
-Allowed:
-
-```text
-.editorconfig
-Directory.Build.props
-AGENTS.md
-src/AGENTS.md
-.github/copilot-instructions.md
-.github/instructions/test.instructions.md
-```
-
-Rejected:
-
-```text
-/AGENTS.md
-../AGENTS.md
-src/../AGENTS.md
-src/
-src//AGENTS.md
-_sync-files-from-manifest-workflow/generated.md
-```
-
-## Rules
-
-- Must use forward slashes.
+- Must be non-empty.
 - Must be relative to the repository root.
-- Must point to a file-like path, not a directory.
-- Must not contain empty path segments.
-- Must not contain `.` or `..` path segments.
-- `target_path` must not be under `_sync-files-from-manifest-workflow/`, which is reserved workflow scratch space.
-- Existing target paths and target parent directories must not be symlinks.
+- Must use `/` separators.
+- Must not end with `/`.
+- Must not contain wildcard syntax.
+- Must not contain leading `/`, backslashes, drive prefixes, empty segments, or exact `.` or `..` segments.
+- Dot-prefixed ordinary names such as `.github/copilot-instructions.md` are valid.
+
+Use `source_glob` for patterns.
+
+## TargetDirectory
+
+Directory-only target root used by `ManifestEntry.target_directory`.
+
+| Property | Value |
+|---|---|
+| Kind | Scalar string |
+| Valid parent | `ManifestEntry` |
+| Parent property | `target_directory` |
+
+Rules:
+
+- `""` means repository root.
+- Every non-root directory must end with exactly one `/`.
+- The value never includes the target file name.
+- Values such as `AGENTS.md`, `.github`, and `.github/AGENTS.md` are invalid because they are not directory syntax.
+- `docs.v1/` is valid; dots are ordinary characters.
+- Leading `/`, backslashes, drive prefixes, empty segments, and exact `.` or `..` segments are invalid.
+
+Exact-file targets use `target_directory + basename(source_path)`. Glob targets use `target_directory + matched source path relative to glob_base`.
