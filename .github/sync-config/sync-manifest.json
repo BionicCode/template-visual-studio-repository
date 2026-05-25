@@ -14,7 +14,11 @@
       "direction": "source_to_target",
       "lifecycle_policy": "enforce",
       "uniqueness_policy": "none",
-      "managed_scope": "whole_file"
+      "managed_scope": "outside_markers",
+      "markers": {
+        "start": "<!-- BEGIN REPOSITORY SPECIFICS -->",
+        "end": "<!-- END REPOSITORY SPECIFICS -->"
+      }
     },
     {
       "source_repo": "BionicCode/workflows",
@@ -24,7 +28,11 @@
       "direction": "source_to_target",
       "lifecycle_policy": "enforce",
       "uniqueness_policy": "none",
-      "managed_scope": "whole_file"
+      "managed_scope": "outside_markers",
+      "markers": {
+        "start": "<!-- BEGIN REPOSITORY SPECIFICS -->",
+        "end": "<!-- END REPOSITORY SPECIFICS -->"
+      }
     },
     {
       "source_repo": "BionicCode/template-visual-studio-repository",
