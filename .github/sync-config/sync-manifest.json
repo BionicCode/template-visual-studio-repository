@@ -43,6 +43,20 @@
     {
       "source_repo": "BionicCode/template-visual-studio-repository",
       "source_ref": "main",
+      "source_path": "AGENT_GUARDRAILS.md",
+      "target_directory": "",
+      "direction": "source_to_target",
+      "lifecycle_policy": "enforce",
+      "uniqueness_policy": "none",
+      "managed_scope": "outside_markers",
+      "markers": {
+        "start": "<!-- BEGIN REPOSITORY SPECIFICS -->",
+        "end": "<!-- END REPOSITORY SPECIFICS -->"
+      }
+    },
+    {
+      "source_repo": "BionicCode/template-visual-studio-repository",
+      "source_ref": "main",
       "source_path": ".github/copilot-instructions.md",
       "target_directory": ".github/",
       "direction": "source_to_target",

@@ -203,6 +203,4 @@ Before finishing, verify:
 <!-- BEGIN REPOSITORY SPECIFICS -->
 <!-- Repository owners may edit only this section -->
 
-<Add custom instructions here...>
-
 <!-- END REPOSITORY SPECIFICS -->

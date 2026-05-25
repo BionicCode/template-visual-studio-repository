@@ -163,3 +163,8 @@ For guarded tasks, report:
 - intentionally retained legacy names or compatibility paths;
 - unrelated dirty worktree state, if present;
 - follow-up migrations or downstream updates.
+
+<!-- BEGIN REPOSITORY SPECIFICS -->
+<!-- Repository owners may edit only this section -->
+
+<!-- END REPOSITORY SPECIFICS -->

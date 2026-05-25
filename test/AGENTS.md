@@ -150,3 +150,8 @@ When reviewing or generating tests, prioritize in this order:
 5. Minimal, relevant setup
 6. Appropriate use of parameterization and test doubles
 7. Execution speed relative to test type
+
+<!-- BEGIN REPOSITORY SPECIFICS -->
+<!-- Repository owners may edit only this section -->
+
+<!-- END REPOSITORY SPECIFICS -->
