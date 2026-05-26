@@ -1,22 +1,3 @@
----
-Created: 2026-05-25T23:40:38+00:00
-Updated: 2026-05-25T23:40:38+00:00
-Version: 1
-Author: BionicCode
----
-<!-- doc-metadata-presentation:start -->
-<details>
-<summary>Change History</summary>
-
-- Updated: <b>2026-05-25T23:40:38+00:00</b> | Author: <b>BionicCode</b> | Changes: <b>Unavailable</b>
-
-</details>
-
----
-
-<br>
-<br>
-<!-- doc-metadata-presentation:end -->
 # ManagedScope
 
 Declares which portion of the target file is managed by the workflow.
@@ -39,7 +20,9 @@ Declares which portion of the target file is managed by the workflow.
 
 ## Notes
 
-Marker-scoped synchronization is text-file behavior. Marker-scoped files are decoded and encoded as strict UTF-8.
+Marker-aware scopes first inspect the source bytes for the exact UTF-8 encoded start and end delimiter byte sequences. If the source contains neither exact UTF-8 encoded start delimiter bytes nor exact UTF-8 encoded end delimiter bytes, no extension points exist and the entry behaves as byte-level `whole_file`.
+
+If the source contains either delimiter byte sequence, marker-aware synchronization is text-file behavior. Source and target marker-scoped files are decoded and encoded as strict UTF-8.
 
 Marker validation criteria:
 
@@ -49,6 +32,7 @@ Marker validation criteria:
 - `markers.start` and `markers.end` must not be identical.
 - Marker delimiters are matched as exact text, not regular expressions.
 - Source-side marker blocks define authoritative extension points where deterministically enforceable.
+- Target-added fences never create edit permissions.
 - Source and target marker blocks are matched by occurrence order.
 - `outside_markers` allows complete omission of all target-owned marker blocks when the target equals the source outside projection.
 - `outside_markers` rejects partial marker block omission and extra exact marker blocks until marker IDs or named blocks exist.

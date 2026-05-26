@@ -1,22 +1,3 @@
----
-Created: 2026-05-25T23:40:38+00:00
-Updated: 2026-05-26T19:08:33+00:00
-Version: 1
-Author: BionicCode
----
-<!-- doc-metadata-presentation:start -->
-<details>
-<summary>Change History</summary>
-
-- Updated: <b>2026-05-26T19:08:33+00:00</b> | Author: <b>BionicCode</b> | Changes: <b>Unavailable</b>
-
-</details>
-
----
-
-<br>
-<br>
-<!-- doc-metadata-presentation:end -->
 # Sync Manifest API Reference
 
 This is the public manifest API for `sync-files-from-manifest.yml`.
@@ -34,6 +15,8 @@ This is the public manifest API for `sync-files-from-manifest.yml`.
 | `target_to_source` | Yes | No | Rejected by current execution rules. |
 | `two_way` | Yes | No | Rejected by current execution rules. |
 | Delete unmatched targets | No | No | Future delete policy required. |
+
+Marker-aware scopes behave as byte-level `whole_file` when the source contains neither exact UTF-8 encoded start delimiter bytes nor exact UTF-8 encoded end delimiter bytes. If the source contains either delimiter byte sequence, strict UTF-8 marker parsing and marker-scope rules apply.
 
 ## Type Index
 
@@ -115,8 +98,8 @@ Verify/sync planning can reject:
 - source tree response was truncated
 - duplicate generated computed targets
 - source fetch failure
-- marker parse failure in an expanded file
-- marker-scoped UTF-8 decode failure
+- marker parse failure in an expanded file when the source contains at least one configured marker delimiter byte sequence
+- marker-scoped UTF-8 decode failure when marker-aware mode is entered
 - reserved or unsafe computed target paths
 
 `validate` is local-only. Remote expansion, zero-match detection, generated duplicate detection, source tree truncation, source fetching, marker parsing, and write planning happen during PR verification or branch/default maintenance sync before writes.

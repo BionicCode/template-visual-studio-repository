@@ -1,22 +1,3 @@
----
-Created: 2026-05-25T23:40:38+00:00
-Updated: 2026-05-26T19:08:33+00:00
-Version: 1
-Author: BionicCode
----
-<!-- doc-metadata-presentation:start -->
-<details>
-<summary>Change History</summary>
-
-- Updated: <b>2026-05-26T19:08:33+00:00</b> | Author: <b>BionicCode</b> | Changes: <b>Unavailable</b>
-
-</details>
-
----
-
-<br>
-<br>
-<!-- doc-metadata-presentation:end -->
 # Sync Manifest
 
 `sync-manifest.json` tells the reusable workflow which source files are managed and where they are projected in the caller repository. Caller repositories own their manifest; this workflows repository owns the engine, schema, semantic rules, starter template, and copied reference documentation.
@@ -42,7 +23,7 @@ Author: BionicCode
       "source_repo": "BionicCode/workflows",
       "source_ref": "main",
       "source_glob": ".github/scripts/sync-files-from-manifest/documentation/**/*.md",
-      "target_directory": ".github/tools/sync-config/documentation/",
+      "target_directory": ".github/sync-config/documentation/",
       "glob": {
         "recursive": true,
         "include_hidden": false
@@ -178,7 +159,7 @@ Recursive documentation sync:
   "source_repo": "BionicCode/workflows",
   "source_ref": "main",
   "source_glob": ".github/scripts/sync-files-from-manifest/documentation/**/*.md",
-  "target_directory": ".github/tools/sync-config/documentation/",
+  "target_directory": ".github/sync-config/documentation/",
   "glob": {
     "recursive": true
   },
@@ -226,7 +207,7 @@ Name-fragment filter:
   "source_repo": "BionicCode/workflows",
   "source_ref": "main",
   "source_glob": ".github/scripts/sync-files-from-manifest/documentation/sync-manifest*.md",
-  "target_directory": ".github/tools/sync-config/documentation/",
+  "target_directory": ".github/sync-config/documentation/",
   "direction": "source_to_target",
   "lifecycle_policy": "enforce",
   "uniqueness_policy": "none",
@@ -262,6 +243,8 @@ Source placeholder:
 ```
 
 Do not append annotations inside a marker delimiter unless the manifest marker string includes that annotation exactly. If no target-owned section is desired, use `whole_file` instead of marker scope.
+
+Source marker blocks define target-owned extension points. If the source contains neither exact UTF-8 encoded start delimiter bytes nor exact UTF-8 encoded end delimiter bytes, no extension points exist and marker-aware scopes behave as byte-level `whole_file`. Target-added fences never create edit permissions. If a binary or non-UTF-8 source file happens to contain one of the configured marker delimiter byte sequences, marker-aware mode is entered and strict UTF-8 marker parsing applies.
 
 ## Current Execution Rules
 

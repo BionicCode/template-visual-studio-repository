@@ -1,22 +1,3 @@
----
-Created: 2026-05-25T23:40:38+00:00
-Updated: 2026-05-25T23:40:38+00:00
-Version: 1
-Author: BionicCode
----
-<!-- doc-metadata-presentation:start -->
-<details>
-<summary>Change History</summary>
-
-- Updated: <b>2026-05-25T23:40:38+00:00</b> | Author: <b>BionicCode</b> | Changes: <b>Unavailable</b>
-
-</details>
-
----
-
-<br>
-<br>
-<!-- doc-metadata-presentation:end -->
 # Markers
 
 Marker delimiter object used by marker-scoped managed scopes.
@@ -59,8 +40,10 @@ Marker delimiter object used by marker-scoped managed scopes.
 - Adjacent marker blocks are allowed.
 - Empty inside content and empty outside content are allowed.
 - Nested marker blocks are rejected.
-- Source files must contain valid exact marker pairs for marker-scoped entries.
+- If the source contains neither exact UTF-8 encoded start delimiter bytes nor exact UTF-8 encoded end delimiter bytes, marker-aware scopes behave as byte-level `whole_file`.
+- If the source contains either delimiter byte sequence, the source file must contain valid exact marker pairs and strict UTF-8 marker parsing applies.
 - Source marker blocks define the authoritative sync regions where deterministic enforcement is possible.
+- Target-added fences never create edit permissions.
 - Target marker interpretation depends on `managed_scope`.
 
 ## `outside_markers`
@@ -83,4 +66,5 @@ Marker delimiter object used by marker-scoped managed scopes.
 ## Composition
 
 - When a target file exists, composed output preserves marker delimiter slices from the target file.
-- Marker-scoped synchronization is text-file behavior and uses strict UTF-8 decoding and encoding.
+- Marker-scoped synchronization uses strict UTF-8 decoding and encoding only after marker-aware mode is entered by finding at least one configured delimiter byte sequence in the source.
+- If a binary or non-UTF-8 source file happens to contain one of the configured marker delimiter byte sequences, strict UTF-8 marker parsing applies.
