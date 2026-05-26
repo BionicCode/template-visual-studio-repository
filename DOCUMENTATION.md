@@ -38,7 +38,7 @@ Do not push everything into one layer.
 ---
 
 ## 1) Source comments inside code
-Use regular `//` comments sparingly and only when the code would otherwise hide important intent.
+Use regular `//` comments deliberately and only when the code would otherwise hide important intent.
 
 Add source comments for:
 - design rationale,
