@@ -1,8 +1,22 @@
 ---
-doc_version: 1
-created: 2026-05-26T01:40:37+02:00
-updated: 2026-05-26T01:40:37+02:00
+Created: 2026-05-25T23:40:37+00:00
+Updated: 2026-05-26T19:08:33+00:00
+Version: 1
+Author: BionicCode
 ---
+<!-- doc-metadata-presentation:start -->
+<details>
+<summary>Change History</summary>
+
+- Updated: <b>2026-05-26T19:08:33+00:00</b> | Author: <b>BionicCode</b> | Changes: <b>Unavailable</b>
+
+</details>
+
+---
+
+<br>
+<br>
+<!-- doc-metadata-presentation:end -->
 # dotnet.instructions.md
 
 See [AGENTS.md](../../src/AGENTS.md) for further .NET specific instructions. That AGENTS.md file will have precedence over this current file which can be outdated.

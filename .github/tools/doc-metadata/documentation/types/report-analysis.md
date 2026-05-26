@@ -1,49 +1,46 @@
 ---
-doc_version: 1
-created: 2026-05-26T01:40:38+02:00
-updated: 2026-05-26T01:40:38+02:00
+Version: 1
+Created: 2026-05-26T19:08:33+00:00
+Updated: 2026-05-26T19:08:33+00:00
+Author: BionicCode
 ---
-# ReportAnalysis
+<!-- doc-metadata-presentation:start -->
+<details>
+<summary>Change History</summary>
 
-Analyze-mode classification output used by the GitHub workflow to decide whether repair is required and safe.
+- Updated: <b>2026-05-26T19:08:33+00:00</b> | Author: <b>BionicCode</b> | Changes: <b>Unavailable</b>
 
-## Shape
+</details>
+
+---
+
+<br>
+<br>
+<!-- doc-metadata-presentation:end -->
+# Report Analysis
+
+Every mode prints a console report. When `GITHUB_STEP_SUMMARY` is available, the script also appends a Markdown summary.
+
+The JSON report includes:
+
+| Property | Description |
+| --- | --- |
+| `mode` | `Analyze`, `Bootstrap`, `Update`, or `Check`. |
+| `comparison` | Selected comparison mode and base/head SHAs when available. |
+| `updatedFiles` | Files rewritten by Bootstrap or Update. |
+| `unchangedFiles` | Files considered but not changed. |
+| `skippedFiles` | Files skipped with a reason. |
+| `failedFiles` | Validation failures and remediation. |
+| `ineligibleFiles` | Manifest matches filtered out by document eligibility. |
+| `analysis` | Analyze mode classification and repair categories. |
+| `summaryCounts` | Counts used by console and GitHub summaries. |
+
+`ChangedFilesOutputPath` remains stable:
 
 ```json
 {
-  "metadataValid": false,
-  "repairRequired": true,
-  "repairSafe": true,
-  "unrecoverableFailure": false,
-  "repairableFiles": [
-    {
-      "path": "README.md",
-      "reason": "body changed",
-      "categories": [ "incremented" ]
-    }
-  ],
-  "unrecoverableFiles": [],
-  "repairCategories": {
-    "initialized": [],
-    "incremented": [ "README.md" ],
-    "restoredFromHistory": [],
-    "repaired": [],
-    "skippedManualEdit": [],
-    "notSafelyRepairable": []
-  }
+  "changedFiles": ["README.md"]
 }
 ```
 
-## Fields
-
-| Field | Type | Description |
-|---|---|---|
-| `metadataValid` | boolean | True when no repair is required and no unrecoverable failure exists. |
-| `repairRequired` | boolean | True when at least one eligible governed file can be safely repaired. |
-| `repairSafe` | boolean | False when unrecoverable failures exist. |
-| `unrecoverableFailure` | boolean | True when metadata state needs human intervention. |
-| `repairableFiles` | object[] | Files the workflow may pass to Update mode. |
-| `unrecoverableFiles` | object[] | Files that must not be automatically repaired. |
-| `repairCategories` | object | Grouped repairable and unrecoverable path lists for reporting. |
-
-`ChangedFilesOutputPath` is not an Analyze output. It remains reserved for actual writes by Update or Bootstrap.
+Use this machine-readable file for hooks and workflow staging. Do not parse the human report.

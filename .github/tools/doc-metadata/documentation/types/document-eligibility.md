@@ -1,33 +1,48 @@
 ---
-doc_version: 1
-created: 2026-05-26T01:40:38+02:00
-updated: 2026-05-26T01:40:38+02:00
+Version: 1
+Created: 2026-05-26T19:08:33+00:00
+Updated: 2026-05-26T19:08:33+00:00
+Author: BionicCode
 ---
-# DocumentEligibility
+<!-- doc-metadata-presentation:start -->
+<details>
+<summary>Change History</summary>
 
-Eligibility filters manifest matches to document-like text files before Analyze, Bootstrap, Update, or Repair can mutate anything.
+- Updated: <b>2026-05-26T19:08:33+00:00</b> | Author: <b>BionicCode</b> | Changes: <b>Unavailable</b>
 
-## Fields
+</details>
 
-| Field | Required | Type | Default | Description |
-|---|---:|---|---|---|
-| `allowedExtensions` | No | string[] | `.md`, `.markdown`, `.txt` | Base allowed extensions. If present, replaces the default base list. |
-| `additionalAllowedExtensions` | No | string[] | `[]` | Extensions appended to the base allowed list. |
-| `deniedExtensions` | No | string[] | `[]` | Extensions that are never eligible. Denied wins over allowed. |
-| `deniedPaths` | No | string[] | `[]` | Repository-relative forward-slash path or glob patterns that are never eligible. |
-| `allowExtensionless` | No | boolean | `false` | Allows files without an extension. |
-| `failOnIneligibleMatches` | No | boolean | `false` | Fails when manifest patterns match ineligible files. |
+---
 
-## Extension Semantics
+<br>
+<br>
+<!-- doc-metadata-presentation:end -->
+# Document Eligibility
 
-Extensions are normalized by script code to leading-dot lowercase values. Values without a leading dot are accepted and normalized. Empty values, dot-only values, wildcards, and path separators are invalid.
+`documentEligibility` filters manifest matches before analysis or mutation.
 
-File extension comparison is case-insensitive after normalization.
+| Property | Default | Description |
+| --- | --- | --- |
+| `allowedExtensions` | `.md`, `.markdown`, `.txt` | Base allowed extensions. If present, replaces the default list. |
+| `additionalAllowedExtensions` | `[]` | Appends extra document-like extensions. |
+| `deniedExtensions` | `[]` | Always wins over allowed extensions. |
+| `deniedPaths` | `[]` | Repository-relative denied path or glob patterns. |
+| `allowExtensionless` | `false` | Allows files without extensions. |
+| `failOnIneligibleMatches` | `false` | Fails when broad globs match ineligible files. |
 
-## Path Semantics
+Extensions normalize to leading-dot lowercase values. Wildcards and path separators are invalid in extension lists.
 
-`deniedPaths` are evaluated against normalized repository-relative paths using `/` separators. Absolute paths, drive-qualified paths, backslashes, and traversal with `..` are invalid.
+Files must decode as strict UTF-8 and must not contain NUL bytes. Invalid UTF-8 is reported as `ignoredBinaryOrNonText` with the remediation: convert the document to UTF-8 if it should be managed.
 
-## Text Safety
+Example:
 
-The supported document text encoding is strict UTF-8 with optional BOM preservation. Invalid UTF-8 or NUL bytes are classified as `ignoredBinaryOrNonText` and are never mutated.
+```json
+{
+  "include": ["AGENTS.*"],
+  "documentEligibility": {
+    "allowedExtensions": [".md", ".markdown", ".txt"]
+  }
+}
+```
+
+`AGENTS.md` is eligible. `AGENTS.cs` is reported but not modified.

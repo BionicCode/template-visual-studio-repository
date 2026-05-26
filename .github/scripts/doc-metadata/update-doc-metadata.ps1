@@ -23,7 +23,9 @@ param(
 
     [string] $ChangedFilesOutputPath,
 
-    [string] $ReportOutputPath
+    [string] $ReportOutputPath,
+
+    [string] $HistoryLinkMapPath
 )
 
 Set-StrictMode -Version Latest
@@ -31,7 +33,11 @@ $ErrorActionPreference = "Stop"
 
 $script:RepositoryRoot = $null
 $script:ManifestFullPath = $null
-$script:ManagedFields = @("doc_version", "created", "updated")
+$script:ManagedFields = @("Version", "Created", "Updated", "Author")
+$script:LegacyManagedFields = @("doc_version", "created", "updated")
+$script:PresentationStartMarker = "<!-- doc-metadata-presentation:start -->"
+$script:PresentationEndMarker = "<!-- doc-metadata-presentation:end -->"
+$script:PlainTextSeparator = "-" * 80
 $script:TimestampPattern = "^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?[+-]\d{2}:\d{2}$"
 $script:RemediationCommand = "pwsh ./.github/scripts/doc-metadata/update-doc-metadata.ps1 -Mode Update -Root ."
 $script:DefaultAllowedDocumentExtensions = @(".md", ".markdown", ".txt")
@@ -78,6 +84,9 @@ function New-Report {
                 repaired = [System.Collections.Generic.List[string]]::new()
                 skippedManualEdit = [System.Collections.Generic.List[string]]::new()
                 notSafelyRepairable = [System.Collections.Generic.List[string]]::new()
+                historyTamperDetected = [System.Collections.Generic.List[string]]::new()
+                historyRestoredFromTrustedPrevious = [System.Collections.Generic.List[string]]::new()
+                historyTamperUnrecoverable = [System.Collections.Generic.List[string]]::new()
             }
         }
         summaryCounts = @{}
@@ -103,8 +112,8 @@ function Add-UpdatedFile {
         path = $Path
         metadataFormat = $Format
         metadataPlacement = $Placement
-        oldDocVersion = $OldVersion
-        newDocVersion = $NewVersion
+        oldVersion = $OldVersion
+        newVersion = $NewVersion
         oldCreated = $OldCreated
         newCreated = $NewCreated
         oldUpdated = $OldUpdated
@@ -125,8 +134,8 @@ function Add-UnchangedFile {
     $Report.unchangedFiles.Add([ordered]@{
         path = $Path
         reason = $Reason
-        oldDocVersion = $OldVersion
-        newDocVersion = $NewVersion
+        oldVersion = $OldVersion
+        newVersion = $NewVersion
     })
 }
 
@@ -622,27 +631,100 @@ function Get-PatternList {
 function New-MetadataConfig {
     param(
         [object] $Defaults,
-        [object] $Override = $null
+        [object] $Override = $null,
+        [string] $RepoPath = ""
     )
 
+    $metadataDefaults = Get-PropertyValue -Object $Defaults -Name "metadata"
+    if ($null -eq $metadataDefaults) {
+        $metadataDefaults = $Defaults
+    }
+
+    $presentationDefaults = Get-PropertyValue -Object $Defaults -Name "presentation"
+    $overrideMetadata = Get-PropertyValue -Object $Override -Name "metadata"
+    if ($null -eq $overrideMetadata) {
+        $overrideMetadata = $Override
+    }
+    $overridePresentation = Get-PropertyValue -Object $Override -Name "presentation"
+
     $config = [ordered]@{
-        metadataFormat = [string] (Get-PropertyValue -Object $Defaults -Name "metadataFormat")
-        metadataPlacement = [string] (Get-PropertyValue -Object $Defaults -Name "metadataPlacement")
-        versionField = [string] (Get-PropertyValue -Object $Defaults -Name "versionField")
-        createdField = [string] (Get-PropertyValue -Object $Defaults -Name "createdField")
-        updatedField = [string] (Get-PropertyValue -Object $Defaults -Name "updatedField")
-        versioningMode = [string] (Get-PropertyValue -Object $Defaults -Name "versioningMode")
-        timestampFormat = [string] (Get-PropertyValue -Object $Defaults -Name "timestampFormat")
+        metadataFormat = "yaml-front-matter"
+        metadataPlacement = "top"
+        versionField = "Version"
+        createdField = "Created"
+        updatedField = "Updated"
+        authorField = "Author"
+        versioningMode = "body-content-change"
+        timestampFormat = "rfc3339-utc"
         commentStart = $null
         commentLinePrefix = $null
         commentEnd = $null
+        presentationEnabled = $true
+        historyLimit = 20
+        includeSeparator = $true
+        spacingBreaks = 2
+        isMarkdown = $false
+        isPlainText = $false
+    }
+
+    foreach ($name in @("format", "placement", "versionField", "createdField", "updatedField", "authorField", "versioningMode", "timestampFormat", "commentStart", "commentLinePrefix", "commentEnd")) {
+        $value = Get-PropertyValue -Object $metadataDefaults -Name $name
+        if ($null -ne $value) {
+            switch ($name) {
+                "format" { $config.metadataFormat = [string] $value; break }
+                "placement" { $config.metadataPlacement = [string] $value; break }
+                default { $config[$name] = [string] $value; break }
+            }
+        }
+    }
+    foreach ($name in @("enabled", "historyLimit", "includeSeparator", "spacingBreaks")) {
+        $value = Get-PropertyValue -Object $presentationDefaults -Name $name
+        if ($null -ne $value) {
+            switch ($name) {
+                "enabled" { $config.presentationEnabled = [bool] $value; break }
+                "historyLimit" { $config.historyLimit = $value; break }
+                "includeSeparator" { $config.includeSeparator = [bool] $value; break }
+                "spacingBreaks" { $config.spacingBreaks = [int] $value; break }
+            }
+        }
+    }
+
+    $extension = [System.IO.Path]::GetExtension((Normalize-RepoPath $RepoPath)).ToLowerInvariant()
+    $config.isMarkdown = $extension -in @(".md", ".markdown")
+    $config.isPlainText = $extension -eq ".txt"
+
+    if ($config.isPlainText) {
+        $config.presentationEnabled = $false
+        $config.historyLimit = 0
+        if ($config.metadataFormat -eq "comment-block" -and [string]::IsNullOrWhiteSpace([string] $config.commentStart)) {
+            $config.commentStart = "<!-- doc-metadata"
+            $config.commentEnd = "-->"
+        }
+    }
+    elseif ($config.isMarkdown) {
+        $config.presentationEnabled = $true
     }
 
     if ($null -ne $Override) {
-        foreach ($name in @("metadataFormat", "metadataPlacement", "versionField", "createdField", "updatedField", "versioningMode", "timestampFormat", "commentStart", "commentLinePrefix", "commentEnd")) {
-            $value = Get-PropertyValue -Object $Override -Name $name
+        foreach ($name in @("format", "placement", "versionField", "createdField", "updatedField", "authorField", "versioningMode", "timestampFormat", "commentStart", "commentLinePrefix", "commentEnd")) {
+            $value = Get-PropertyValue -Object $overrideMetadata -Name $name
             if ($null -ne $value) {
-                $config[$name] = [string] $value
+                switch ($name) {
+                    "format" { $config.metadataFormat = [string] $value; break }
+                    "placement" { $config.metadataPlacement = [string] $value; break }
+                    default { $config[$name] = [string] $value; break }
+                }
+            }
+        }
+        foreach ($name in @("enabled", "historyLimit", "includeSeparator", "spacingBreaks")) {
+            $value = Get-PropertyValue -Object $overridePresentation -Name $name
+            if ($null -ne $value) {
+                switch ($name) {
+                    "enabled" { $config.presentationEnabled = [bool] $value; break }
+                    "historyLimit" { $config.historyLimit = $value; break }
+                    "includeSeparator" { $config.includeSeparator = [bool] $value; break }
+                    "spacingBreaks" { $config.spacingBreaks = [int] $value; break }
+                }
             }
         }
     }
@@ -660,6 +742,9 @@ function Test-IsTimestamp {
     if ($Value -notmatch $script:TimestampPattern) {
         return $false
     }
+    if ($Value.EndsWith("-00:00", [System.StringComparison]::Ordinal)) {
+        return $false
+    }
 
     $parsed = [System.DateTimeOffset]::MinValue
     [System.DateTimeOffset]::TryParse(
@@ -669,8 +754,29 @@ function Test-IsTimestamp {
         [ref] $parsed)
 }
 
+function ConvertTo-UtcTimestampValue {
+    param([string] $Value)
+
+    $parsed = [System.DateTimeOffset]::Parse($Value, [System.Globalization.CultureInfo]::InvariantCulture)
+    $utc = $parsed.ToUniversalTime()
+    $utc.ToString("yyyy-MM-ddTHH:mm:ss", [System.Globalization.CultureInfo]::InvariantCulture) + "+00:00"
+}
+
+function Test-TimestampEquivalent {
+    param(
+        [object] $Left,
+        [object] $Right
+    )
+
+    if (-not (Test-IsTimestamp $Left) -or -not (Test-IsTimestamp $Right)) {
+        return $false
+    }
+
+    (ConvertTo-UtcTimestampValue $Left) -eq (ConvertTo-UtcTimestampValue $Right)
+}
+
 function ConvertTo-TimestampValue {
-    [System.DateTimeOffset]::Now.ToString("yyyy-MM-ddTHH:mm:sszzz", [System.Globalization.CultureInfo]::InvariantCulture)
+    [System.DateTimeOffset]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ss", [System.Globalization.CultureInfo]::InvariantCulture) + "+00:00"
 }
 
 function ConvertTo-DisplayValue {
@@ -683,20 +789,90 @@ function ConvertTo-DisplayValue {
     [string] $Value
 }
 
-function ConvertTo-NullableInt64 {
+function Test-VersionValue {
     param([object] $Value)
 
     if ($Value -is [int] -or $Value -is [long]) {
-        if ([int64] $Value -gt 0) {
-            return [int64] $Value
+        return ([int64] $Value -gt 0)
+    }
+
+    if ($Value -isnot [string]) {
+        return $false
+    }
+
+    $text = ([string] $Value).Trim()
+    if ($text -notmatch "^[0-9]+(?:\.[0-9]+)*$") {
+        return $false
+    }
+
+    foreach ($component in @($text -split "\.")) {
+        if ($component -notmatch "^[0-9]+$" -or [int64] $component -lt 0) {
+            return $false
         }
     }
 
-    if ($Value -is [string] -and $Value -match "^[1-9][0-9]*$") {
-        return [int64] $Value
+    [int64] (@($text -split "\.")[0]) -gt 0
+}
+
+function ConvertTo-VersionString {
+    param([object] $Value)
+
+    if (-not (Test-VersionValue $Value)) {
+        return $null
     }
 
-    $null
+    ([string] $Value).Trim()
+}
+
+function Get-VersionMajor {
+    param([object] $Value)
+
+    $version = ConvertTo-VersionString $Value
+    if ($null -eq $version) {
+        return $null
+    }
+
+    [int64] (@($version -split "\.")[0])
+}
+
+function Compare-VersionValue {
+    param(
+        [object] $Left,
+        [object] $Right
+    )
+
+    $leftText = ConvertTo-VersionString $Left
+    $rightText = ConvertTo-VersionString $Right
+    if ($null -eq $leftText -or $null -eq $rightText) {
+        return $null
+    }
+
+    $leftParts = @($leftText -split "\." | ForEach-Object { [int64] $_ })
+    $rightParts = @($rightText -split "\." | ForEach-Object { [int64] $_ })
+    $max = [Math]::Max($leftParts.Count, $rightParts.Count)
+    for ($index = 0; $index -lt $max; $index++) {
+        $leftPart = if ($index -lt $leftParts.Count) { $leftParts[$index] } else { 0 }
+        $rightPart = if ($index -lt $rightParts.Count) { $rightParts[$index] } else { 0 }
+        if ($leftPart -gt $rightPart) {
+            return 1
+        }
+        if ($leftPart -lt $rightPart) {
+            return -1
+        }
+    }
+
+    0
+}
+
+function Get-IncrementedVersion {
+    param([object] $Value)
+
+    $major = Get-VersionMajor $Value
+    if ($null -eq $major) {
+        return "1"
+    }
+
+    [string] ($major + 1)
 }
 
 function Split-ContentLines {
@@ -983,7 +1159,10 @@ function Get-AllRepositoryFiles {
         $files = Invoke-GitRaw -Arguments @("-C", $script:RepositoryRoot, "ls-files", "--cached", "--others", "--exclude-standard", "-z")
         if ($files.ExitCode -eq 0) {
             $text = Convert-StrictUtf8BytesToText -Bytes $files.Bytes
-            return @($text -split "`0" | Where-Object { $_ -ne "" } | ForEach-Object { Normalize-RepoPath $_ })
+            return @($text -split "`0" | Where-Object { $_ -ne "" } | ForEach-Object { Normalize-RepoPath $_ } | Where-Object {
+                $candidate = Join-Path $script:RepositoryRoot ($_.Replace("/", [System.IO.Path]::DirectorySeparatorChar))
+                Test-Path -LiteralPath $candidate -PathType Leaf
+            })
         }
     }
 
@@ -1002,12 +1181,15 @@ function Test-PathIsReparsePoint {
 function Validate-PatternEntries {
     param(
         [object[]] $Entries,
-        [string] $PathName
+        [string] $PathName,
+        [object] $Defaults = $null
     )
 
     $errors = [System.Collections.Generic.List[string]]::new()
+    $index = 0
     foreach ($entry in @($Entries)) {
         if ($null -eq $entry) {
+            $index++
             continue
         }
 
@@ -1015,13 +1197,27 @@ function Validate-PatternEntries {
             if ([string]::IsNullOrWhiteSpace($entry)) {
                 $errors.Add("$PathName entries must not be empty.")
             }
+            $index++
             continue
+        }
+
+        foreach ($propertyName in Get-ObjectPropertyNames $entry) {
+            if ($propertyName -notin @("pattern", "metadata", "presentation")) {
+                $errors.Add("$PathName[$index] has unknown property '$propertyName'.")
+            }
         }
 
         $pattern = Get-PropertyValue -Object $entry -Name "pattern"
         if ([string]::IsNullOrWhiteSpace([string] $pattern)) {
-            $errors.Add("$PathName object entries must define a non-empty pattern property.")
+            $errors.Add("$PathName[$index] object entries must define a non-empty pattern property.")
         }
+
+        Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-MetadataConfig -Config (Get-PropertyValue -Object $entry -Name "metadata") -PathName "$PathName[$index].metadata" -RequireAll $false)
+        Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-PresentationConfig -Config (Get-PropertyValue -Object $entry -Name "presentation") -PathName "$PathName[$index].presentation" -RequireAll $false)
+        if ($null -ne $Defaults) {
+            Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-EffectiveMetadataConfig -Config (New-MetadataConfig -Defaults $Defaults -Override $entry -RepoPath ([string] $pattern)) -PathName "$PathName[$index] effective config")
+        }
+        $index++
     }
 
     $errors.ToArray()
@@ -1044,16 +1240,19 @@ function Validate-MetadataConfig {
     param(
         [object] $Config,
         [string] $PathName,
-        [bool] $RequireAll,
-        [bool] $AllowPatternProperties = $false
+        [bool] $RequireAll
     )
 
     $errors = [System.Collections.Generic.List[string]]::new()
-    $allowedProperties = @("metadataFormat", "metadataPlacement", "versionField", "createdField", "updatedField", "versioningMode", "timestampFormat", "commentStart", "commentLinePrefix", "commentEnd")
-    if ($AllowPatternProperties) {
-        $allowedProperties += @("include", "exclude")
+    if ($null -eq $Config) {
+        if ($RequireAll) {
+            $errors.Add("$PathName must be defined.")
+        }
+        return $errors.ToArray()
     }
-    $required = @("metadataFormat", "metadataPlacement", "versionField", "createdField", "updatedField", "versioningMode", "timestampFormat")
+
+    $allowedProperties = @("format", "placement", "versionField", "createdField", "updatedField", "authorField", "versioningMode", "timestampFormat", "commentStart", "commentLinePrefix", "commentEnd")
+    $required = @("format", "placement", "versionField", "createdField", "updatedField", "authorField", "versioningMode", "timestampFormat")
 
     foreach ($propertyName in Get-ObjectPropertyNames $Config) {
         if ($propertyName -notin $allowedProperties) {
@@ -1069,29 +1268,70 @@ function Validate-MetadataConfig {
         }
     }
 
-    $format = Get-PropertyValue -Object $Config -Name "metadataFormat"
-    $placement = Get-PropertyValue -Object $Config -Name "metadataPlacement"
+    $format = Get-PropertyValue -Object $Config -Name "format"
+    $placement = Get-PropertyValue -Object $Config -Name "placement"
     $versioningMode = Get-PropertyValue -Object $Config -Name "versioningMode"
     $timestampFormat = Get-PropertyValue -Object $Config -Name "timestampFormat"
 
     if ($null -ne $format -and $format -notin @("yaml-front-matter", "comment-block")) {
-        $errors.Add("$PathName.metadataFormat must be 'yaml-front-matter' or 'comment-block'.")
+        $errors.Add("$PathName.format must be 'yaml-front-matter' or 'comment-block'.")
     }
 
     if ($null -ne $placement -and $placement -notin @("top", "bottom")) {
-        $errors.Add("$PathName.metadataPlacement must be 'top' or 'bottom'.")
+        $errors.Add("$PathName.placement must be 'top' or 'bottom'.")
     }
 
     if ($format -eq "yaml-front-matter" -and $placement -eq "bottom") {
-        $errors.Add("$PathName cannot use metadataPlacement 'bottom' with yaml-front-matter.")
+        $errors.Add("$PathName cannot use placement 'bottom' with yaml-front-matter.")
     }
 
     if ($null -ne $versioningMode -and $versioningMode -ne "body-content-change") {
         $errors.Add("$PathName.versioningMode must be 'body-content-change'.")
     }
 
-    if ($null -ne $timestampFormat -and $timestampFormat -ne "iso-8601-offset") {
-        $errors.Add("$PathName.timestampFormat must be 'iso-8601-offset'.")
+    if ($null -ne $timestampFormat -and $timestampFormat -ne "rfc3339-utc") {
+        $errors.Add("$PathName.timestampFormat must be 'rfc3339-utc'.")
+    }
+
+    $errors.ToArray()
+}
+
+function Validate-PresentationConfig {
+    param(
+        [object] $Config,
+        [string] $PathName,
+        [bool] $RequireAll
+    )
+
+    $errors = [System.Collections.Generic.List[string]]::new()
+    if ($null -eq $Config) {
+        if ($RequireAll) {
+            $errors.Add("$PathName must be defined.")
+        }
+        return $errors.ToArray()
+    }
+
+    foreach ($propertyName in Get-ObjectPropertyNames $Config) {
+        if ($propertyName -notin @("enabled", "historyLimit", "includeSeparator", "spacingBreaks")) {
+            $errors.Add("$PathName has unknown property '$propertyName'.")
+        }
+    }
+
+    foreach ($propertyName in @("enabled", "includeSeparator")) {
+        $value = Get-PropertyValue -Object $Config -Name $propertyName
+        if ($null -ne $value -and $value -isnot [bool]) {
+            $errors.Add("$PathName.$propertyName must be a boolean.")
+        }
+    }
+
+    foreach ($propertyName in @("historyLimit", "spacingBreaks")) {
+        $value = Get-PropertyValue -Object $Config -Name $propertyName
+        if ($null -ne $value -and ($value -isnot [int] -and $value -isnot [long])) {
+            $errors.Add("$PathName.$propertyName must be a non-negative integer or null.")
+        }
+        elseif ($null -ne $value -and [int64] $value -lt 0) {
+            $errors.Add("$PathName.$propertyName must not be negative.")
+        }
     }
 
     $errors.ToArray()
@@ -1104,7 +1344,6 @@ function Validate-EffectiveMetadataConfig {
     )
 
     $errors = [System.Collections.Generic.List[string]]::new()
-    Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-MetadataConfig -Config $Config -PathName $PathName -RequireAll $true)
 
     if ((Get-PropertyValue -Object $Config -Name "metadataFormat") -eq "comment-block") {
         if ([string]::IsNullOrWhiteSpace([string] (Get-PropertyValue -Object $Config -Name "commentStart"))) {
@@ -1113,6 +1352,24 @@ function Validate-EffectiveMetadataConfig {
 
         if ([string]::IsNullOrWhiteSpace([string] (Get-PropertyValue -Object $Config -Name "commentEnd"))) {
             $errors.Add("$PathName.commentEnd is required for comment-block metadata.")
+        }
+    }
+
+    if ((Get-PropertyValue -Object $Config -Name "metadataFormat") -notin @("yaml-front-matter", "comment-block")) {
+        $errors.Add("$PathName.format must be 'yaml-front-matter' or 'comment-block'.")
+    }
+
+    if ((Get-PropertyValue -Object $Config -Name "metadataPlacement") -notin @("top", "bottom")) {
+        $errors.Add("$PathName.placement must be 'top' or 'bottom'.")
+    }
+
+    if ((Get-PropertyValue -Object $Config -Name "metadataFormat") -eq "yaml-front-matter" -and (Get-PropertyValue -Object $Config -Name "metadataPlacement") -eq "bottom") {
+        $errors.Add("$PathName cannot use placement 'bottom' with yaml-front-matter.")
+    }
+
+    foreach ($fieldName in @("versionField", "createdField", "updatedField", "authorField")) {
+        if ([string]::IsNullOrWhiteSpace([string] (Get-PropertyValue -Object $Config -Name $fieldName))) {
+            $errors.Add("$PathName.$fieldName must be defined.")
         }
     }
 
@@ -1178,7 +1435,7 @@ function Read-Manifest {
     $manifestText = Get-Content -LiteralPath $ManifestFile -Raw
     $manifest = $manifestText | ConvertFrom-Json -Depth 32
     $errors = [System.Collections.Generic.List[string]]::new()
-    $allowedTopLevel = @('$schema', "version", "defaults", "include", "exclude", "overrides", "documentEligibility")
+    $allowedTopLevel = @('$schema', "version", "defaults", "include", "exclude", "documentEligibility")
     foreach ($propertyName in Get-ObjectPropertyNames $manifest) {
         if ($propertyName -notin $allowedTopLevel) {
             $errors.Add("Manifest has unknown top-level property '$propertyName'.")
@@ -1186,7 +1443,7 @@ function Read-Manifest {
     }
 
     foreach ($requiredProperty in @('$schema', "version", "defaults", "include", "exclude")) {
-        if ($null -eq (Get-PropertyValue -Object $manifest -Name $requiredProperty)) {
+        if (-not (Test-ObjectPropertyExists -Object $manifest -Name $requiredProperty)) {
             $errors.Add("Manifest must define '$requiredProperty'.")
         }
     }
@@ -1196,36 +1453,20 @@ function Read-Manifest {
     }
 
     $defaults = Get-PropertyValue -Object $manifest -Name "defaults"
-    Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-MetadataConfig -Config $defaults -PathName "defaults" -RequireAll $true)
-    Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-EffectiveMetadataConfig -Config (New-MetadataConfig -Defaults $defaults) -PathName "defaults effective config")
+    foreach ($propertyName in Get-ObjectPropertyNames $defaults) {
+        if ($propertyName -notin @("metadata", "presentation")) {
+            $errors.Add("defaults has unknown property '$propertyName'.")
+        }
+    }
+    Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-MetadataConfig -Config (Get-PropertyValue -Object $defaults -Name "metadata") -PathName "defaults.metadata" -RequireAll $true)
+    Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-PresentationConfig -Config (Get-PropertyValue -Object $defaults -Name "presentation") -PathName "defaults.presentation" -RequireAll $true)
+    Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-EffectiveMetadataConfig -Config (New-MetadataConfig -Defaults $defaults -RepoPath "README.md") -PathName "defaults effective config")
     Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-DocumentEligibility -Eligibility (Get-PropertyValue -Object $manifest -Name "documentEligibility"))
 
     [object[]] $includeEntries = @(Get-JsonArrayProperty -Object $manifest -Name "include")
     [object[]] $excludeEntries = @(Get-JsonArrayProperty -Object $manifest -Name "exclude")
-    Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-PatternEntries -Entries $includeEntries -PathName "include")
+    Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-PatternEntries -Entries $includeEntries -PathName "include" -Defaults $defaults)
     Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-PatternEntries -Entries $excludeEntries -PathName "exclude")
-
-    [object[]] $overrides = @(Get-JsonArrayProperty -Object $manifest -Name "overrides")
-    for ($overrideIndex = 0; $overrideIndex -lt $overrides.Count; $overrideIndex++) {
-        $override = $overrides[$overrideIndex]
-        foreach ($propertyName in Get-ObjectPropertyNames $override) {
-            if ($propertyName -notin @("include", "exclude", "metadataFormat", "metadataPlacement", "versionField", "createdField", "updatedField", "versioningMode", "timestampFormat", "commentStart", "commentLinePrefix", "commentEnd")) {
-                $errors.Add("overrides[$overrideIndex] has unknown property '$propertyName'.")
-            }
-        }
-
-        Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-MetadataConfig -Config $override -PathName "overrides[$overrideIndex]" -RequireAll $false -AllowPatternProperties $true)
-        Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-EffectiveMetadataConfig -Config (New-MetadataConfig -Defaults $defaults -Override $override) -PathName "overrides[$overrideIndex] effective config")
-
-        [object[]] $overrideInclude = @(Get-JsonArrayProperty -Object $override -Name "include")
-        [object[]] $overrideExclude = @(Get-JsonArrayProperty -Object $override -Name "exclude")
-        if ($overrideInclude.Count -gt 0) {
-            Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-PatternEntries -Entries $overrideInclude -PathName "overrides[$overrideIndex].include")
-        }
-        if ($overrideExclude.Count -gt 0) {
-            Add-ValidationErrors -Errors $errors -AdditionalErrors (Validate-PatternEntries -Entries $overrideExclude -PathName "overrides[$overrideIndex].exclude")
-        }
-    }
 
     if ($errors.Count -gt 0) {
         throw "Invalid document metadata manifest:`n$($errors -join "`n")"
@@ -1244,15 +1485,14 @@ function Resolve-GovernedFiles {
     $files = Get-AllRepositoryFiles
     $eligibility = Get-DocumentEligibility -Manifest $Manifest
     [object[]] $bootstrapIncludeValues = @(Get-NonNullValues -Values $BootstrapIncludePatterns)
-    $defaultIncludeEntries = if ($bootstrapIncludeValues.Length -gt 0) { $bootstrapIncludeValues } else { @(Get-JsonArrayProperty -Object $Manifest -Name "include") }
-    $defaultIncludePatterns = Get-PatternList -Entries $defaultIncludeEntries
+    $includeEntries = if ($bootstrapIncludeValues.Length -gt 0) { $bootstrapIncludeValues } else { @(Get-JsonArrayProperty -Object $Manifest -Name "include") }
+    $includePatterns = Get-PatternList -Entries $includeEntries
     $topExcludePatterns = Get-PatternList -Entries @(Get-JsonArrayProperty -Object $Manifest -Name "exclude")
     $defaults = Get-PropertyValue -Object $Manifest -Name "defaults"
-    [object[]] $overrides = @(Get-JsonArrayProperty -Object $Manifest -Name "overrides")
     $governed = @{}
 
     Write-Verbose "Resolved $(@($files).Count) repository files."
-    Write-Verbose "Default include patterns: $($defaultIncludePatterns -join ', ')"
+    Write-Verbose "Include patterns: $($includePatterns -join ', ')"
     Write-Verbose "Default exclude patterns: $($topExcludePatterns -join ', ')"
 
     foreach ($repoPath in $files) {
@@ -1260,23 +1500,28 @@ function Resolve-GovernedFiles {
             continue
         }
 
-        $config = $null
-        if (Test-AnyPatternMatch -Patterns $defaultIncludePatterns -PathValue $repoPath) {
-            $config = New-MetadataConfig -Defaults $defaults
+        $matchingConfigs = [System.Collections.Generic.List[object]]::new()
+        foreach ($entry in @($includeEntries)) {
+            $pattern = if ($entry -is [string]) { [string] $entry } else { [string] (Get-PropertyValue -Object $entry -Name "pattern") }
+            if ([string]::IsNullOrWhiteSpace($pattern) -or -not (Test-GlobMatch -Pattern $pattern -PathValue $repoPath)) {
+                continue
+            }
+
+            $entryOverride = if ($entry -is [string]) { $null } else { $entry }
+            $matchingConfigs.Add((New-MetadataConfig -Defaults $defaults -Override $entryOverride -RepoPath $repoPath))
         }
 
-        foreach ($override in $overrides) {
-            $overrideInclude = Get-PatternList -Entries @(Get-JsonArrayProperty -Object $override -Name "include")
-            if (@($overrideInclude).Count -eq 0 -or -not (Test-AnyPatternMatch -Patterns @($overrideInclude) -PathValue $repoPath)) {
+        $config = $null
+        if ($matchingConfigs.Count -gt 0) {
+            $configJson = @($matchingConfigs | ForEach-Object { $_ | ConvertTo-Json -Depth 8 -Compress }) | Sort-Object -Unique
+            if (@($configJson).Count -gt 1) {
+                if ($null -ne $Report) {
+                    Add-FailedFile -Report $Report -Path $repoPath -Rule "include configuration conflict" -Current "multiple include entries with different effective settings" -Expected "only identical effective metadata/presentation settings for duplicate matches" -Remediation "Adjust .github/tools/doc-metadata/doc-metadata-manifest.json so only one scoped include config applies."
+                }
                 continue
             }
 
-            $overrideExclude = Get-PatternList -Entries @(Get-JsonArrayProperty -Object $override -Name "exclude")
-            if (@($overrideExclude).Count -gt 0 -and (Test-AnyPatternMatch -Patterns @($overrideExclude) -PathValue $repoPath)) {
-                continue
-            }
-
-            $config = New-MetadataConfig -Defaults $defaults -Override $override
+            $config = $matchingConfigs[0]
         }
 
         if ($null -ne $config) {
@@ -1327,8 +1572,97 @@ function Test-ManifestExcludedPath {
     Test-AnyPatternMatch -Patterns $excludePatterns -PathValue $RepoPath
 }
 
+function Remove-ManagedPresentation {
+    param(
+        [string] $BodyContent,
+        [object] $Config
+    )
+
+    $lines = Split-ContentLines $BodyContent
+    $startIndex = -1
+    $endIndex = -1
+    for ($index = 0; $index -lt $lines.Count; $index++) {
+        if ($lines[$index].Text.Trim() -eq $script:PresentationStartMarker) {
+            $startIndex = $index
+            break
+        }
+    }
+
+    if ($startIndex -ge 0) {
+        for ($index = $startIndex + 1; $index -lt $lines.Count; $index++) {
+            if ($lines[$index].Text.Trim() -eq $script:PresentationEndMarker) {
+                $endIndex = $index
+                break
+            }
+        }
+
+        if ($endIndex -lt 0) {
+            return [pscustomobject]@{
+                Body = $BodyContent
+                HasPresentation = $true
+                IsPresentationMalformed = $true
+                PresentationLines = @()
+            }
+        }
+
+        $remaining = [System.Collections.Generic.List[object]]::new()
+        for ($index = 0; $index -lt $lines.Count; $index++) {
+            if ($index -ge $startIndex -and $index -le $endIndex) {
+                continue
+            }
+            $remaining.Add($lines[$index])
+        }
+
+        $presentationLines = @($lines[$startIndex..$endIndex] | ForEach-Object { $_.Text })
+        return [pscustomobject]@{
+            Body = (Join-ContentLines $remaining.ToArray())
+            HasPresentation = $true
+            IsPresentationMalformed = $false
+            PresentationLines = $presentationLines
+        }
+    }
+
+    if (-not $Config.presentationEnabled -and $Config.includeSeparator -and $lines.Count -gt 0) {
+        $separatorIndex = -1
+        for ($index = 0; $index -lt $lines.Count; $index++) {
+            if ([string]::IsNullOrWhiteSpace($lines[$index].Text)) {
+                continue
+            }
+            if ($lines[$index].Text -eq $script:PlainTextSeparator) {
+                $separatorIndex = $index
+            }
+            break
+        }
+
+        if ($separatorIndex -ge 0) {
+            $bodyStart = $separatorIndex + 1
+            while ($bodyStart -lt $lines.Count -and [string]::IsNullOrWhiteSpace($lines[$bodyStart].Text)) {
+                $bodyStart++
+            }
+
+            $bodyLines = if ($bodyStart -lt $lines.Count) { @($lines[$bodyStart..($lines.Count - 1)]) } else { @() }
+            return [pscustomobject]@{
+                Body = (Join-ContentLines $bodyLines)
+                HasPresentation = $true
+                IsPresentationMalformed = $false
+                PresentationLines = @($lines[0..($bodyStart - 1)] | ForEach-Object { $_.Text })
+            }
+        }
+    }
+
+    [pscustomobject]@{
+        Body = $BodyContent
+        HasPresentation = $false
+        IsPresentationMalformed = $false
+        PresentationLines = @()
+    }
+}
+
 function Get-YamlMetadataInfo {
-    param([string] $Content)
+    param(
+        [string] $Content,
+        [object] $Config
+    )
 
     $lines = Split-ContentLines $Content
     if ($lines.Count -eq 0 -or $lines[0].Text -ne "---") {
@@ -1338,6 +1672,9 @@ function Get-YamlMetadataInfo {
             Fields = @{}
             Body = $Content
             MetadataLines = @()
+            HasPresentation = $false
+            IsPresentationMalformed = $false
+            PresentationLines = @()
         }
     }
 
@@ -1356,19 +1693,26 @@ function Get-YamlMetadataInfo {
             Fields = @{}
             Body = $Content
             MetadataLines = @()
+            HasPresentation = $false
+            IsPresentationMalformed = $false
+            PresentationLines = @()
         }
     }
 
     $metadataLines = if ($closingIndex -gt 1) { @($lines[1..($closingIndex - 1)] | ForEach-Object { $_.Text }) } else { @() }
     $bodyLines = if (($closingIndex + 1) -lt $lines.Count) { @($lines[($closingIndex + 1)..($lines.Count - 1)]) } else { @() }
     $fields = Get-SimpleMetadataFields -MetadataLines $metadataLines
+    $presentation = Remove-ManagedPresentation -BodyContent (Join-ContentLines $bodyLines) -Config $Config
 
     [pscustomobject]@{
         HasMetadata = $true
         IsMalformed = $false
         Fields = $fields
-        Body = (Join-ContentLines $bodyLines)
+        Body = $presentation.Body
         MetadataLines = $metadataLines
+        HasPresentation = $presentation.HasPresentation
+        IsPresentationMalformed = $presentation.IsPresentationMalformed
+        PresentationLines = $presentation.PresentationLines
     }
 }
 
@@ -1388,6 +1732,9 @@ function Get-CommentMetadataInfo {
             Fields = @{}
             Body = $Content
             MetadataLines = @()
+            HasPresentation = $false
+            IsPresentationMalformed = $false
+            PresentationLines = @()
         }
     }
 
@@ -1399,6 +1746,9 @@ function Get-CommentMetadataInfo {
                 Fields = @{}
                 Body = $Content
                 MetadataLines = @()
+                HasPresentation = $false
+                IsPresentationMalformed = $false
+                PresentationLines = @()
             }
         }
 
@@ -1417,17 +1767,24 @@ function Get-CommentMetadataInfo {
                 Fields = @{}
                 Body = $Content
                 MetadataLines = @()
+                HasPresentation = $false
+                IsPresentationMalformed = $false
+                PresentationLines = @()
             }
         }
 
         $metadataLines = if ($closingIndex -gt 1) { @($lines[1..($closingIndex - 1)] | ForEach-Object { Remove-CommentLinePrefix -Line $_.Text -Prefix $Config.commentLinePrefix }) } else { @() }
         $bodyLines = if (($closingIndex + 1) -lt $lines.Count) { @($lines[($closingIndex + 1)..($lines.Count - 1)]) } else { @() }
+        $presentation = Remove-ManagedPresentation -BodyContent (Join-ContentLines $bodyLines) -Config $Config
         return [pscustomobject]@{
             HasMetadata = $true
             IsMalformed = $false
             Fields = (Get-SimpleMetadataFields -MetadataLines $metadataLines)
-            Body = (Join-ContentLines $bodyLines)
+            Body = $presentation.Body
             MetadataLines = $metadataLines
+            HasPresentation = $presentation.HasPresentation
+            IsPresentationMalformed = $presentation.IsPresentationMalformed
+            PresentationLines = $presentation.PresentationLines
         }
     }
 
@@ -1449,6 +1806,9 @@ function Get-CommentMetadataInfo {
             Fields = @{}
             Body = $Content
             MetadataLines = @()
+            HasPresentation = $false
+            IsPresentationMalformed = $false
+            PresentationLines = @()
         }
     }
 
@@ -1467,18 +1827,25 @@ function Get-CommentMetadataInfo {
             Fields = @{}
             Body = $Content
             MetadataLines = @()
+            HasPresentation = $false
+            IsPresentationMalformed = $false
+            PresentationLines = @()
         }
     }
 
     $metadataLines = if (($endIndex - $startIndex) -gt 1) { @($lines[($startIndex + 1)..($endIndex - 1)] | ForEach-Object { Remove-CommentLinePrefix -Line $_.Text -Prefix $Config.commentLinePrefix }) } else { @() }
     $bodyLines = if ($startIndex -gt 0) { @($lines[0..($startIndex - 1)]) } else { @() }
+    $presentation = Remove-ManagedPresentation -BodyContent (Join-ContentLines $bodyLines) -Config $Config
 
     [pscustomobject]@{
         HasMetadata = $true
         IsMalformed = $false
         Fields = (Get-SimpleMetadataFields -MetadataLines $metadataLines)
-        Body = (Join-ContentLines $bodyLines)
+        Body = $presentation.Body
         MetadataLines = $metadataLines
+        HasPresentation = $presentation.HasPresentation
+        IsPresentationMalformed = $presentation.IsPresentationMalformed
+        PresentationLines = $presentation.PresentationLines
     }
 }
 
@@ -1520,7 +1887,7 @@ function Get-MetadataInfo {
     )
 
     if ($Config.metadataFormat -eq "yaml-front-matter") {
-        return Get-YamlMetadataInfo -Content $Content
+        return Get-YamlMetadataInfo -Content $Content -Config $Config
     }
 
     Get-CommentMetadataInfo -Content $Content -Config $Config
@@ -1545,19 +1912,28 @@ function Update-MetadataLines {
         }
     }
 
-    foreach ($fieldName in @($Config.versionField, $Config.createdField, $Config.updatedField)) {
-        $found = $false
-        for ($index = 0; $index -lt $lines.Count; $index++) {
-            if ($lines[$index] -match "^\s*$([regex]::Escape($fieldName))\s*:") {
-                $lines[$index] = "${fieldName}: $($Values[$fieldName])"
-                $found = $true
+    $managedFieldNames = @($Config.versionField, $Config.createdField, $Config.updatedField, $Config.authorField)
+    $allManagedOrLegacyFields = @($managedFieldNames + $script:LegacyManagedFields | Select-Object -Unique)
+    $customLines = [System.Collections.Generic.List[string]]::new()
+    foreach ($line in @($lines)) {
+        $isManagedLine = $false
+        foreach ($fieldName in $allManagedOrLegacyFields) {
+            if ($line -match "^\s*$([regex]::Escape($fieldName))\s*:") {
+                $isManagedLine = $true
                 break
             }
         }
-
-        if (-not $found) {
-            $lines.Add("${fieldName}: $($Values[$fieldName])")
+        if (-not $isManagedLine) {
+            $customLines.Add($line)
         }
+    }
+
+    $lines = [System.Collections.Generic.List[string]]::new()
+    foreach ($fieldName in $managedFieldNames) {
+        $lines.Add("${fieldName}: $($Values[$fieldName])")
+    }
+    foreach ($line in @($customLines)) {
+        $lines.Add($line)
     }
 
     $lines.ToArray()
@@ -1579,6 +1955,138 @@ function New-MetadataBlock {
     "$($Config.commentStart)$NewLine$($prefixed -join $NewLine)$NewLine$($Config.commentEnd)$NewLine"
 }
 
+function Get-HistoryEntryLines {
+    param([object] $MetadataInfo)
+
+    if ($null -eq $MetadataInfo -or -not $MetadataInfo.HasPresentation -or $MetadataInfo.IsPresentationMalformed) {
+        return @()
+    }
+
+    @($MetadataInfo.PresentationLines | Where-Object { $_ -match "^\s*-\s+Updated:" })
+}
+
+function Test-PresentationEquivalent {
+    param(
+        [object] $Left,
+        [object] $Right
+    )
+
+    if ($null -eq $Left -or $null -eq $Right) {
+        return $false
+    }
+    if (-not $Left.HasPresentation -or -not $Right.HasPresentation -or $Left.IsPresentationMalformed -or $Right.IsPresentationMalformed) {
+        return $false
+    }
+
+    (@($Left.PresentationLines) -join "`n") -eq (@($Right.PresentationLines) -join "`n")
+}
+
+function New-MarkdownPresentation {
+    param(
+        [object] $Config,
+        [hashtable] $Values,
+        [string] $NewLine,
+        [object] $MetadataInfo
+    )
+
+    $historyLines = [System.Collections.Generic.List[string]]::new()
+    $limit = if ($null -eq $Config.historyLimit) { $null } else { [int] $Config.historyLimit }
+    $sourceMetadataInfo = if ($Values.ContainsKey("__sourcePresentationInfo")) { $Values["__sourcePresentationInfo"] } else { $MetadataInfo }
+    $addHistoryEntry = if ($Values.ContainsKey("__addHistoryEntry")) { [bool] $Values["__addHistoryEntry"] } else { $true }
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    if ($null -eq $limit -or $limit -gt 0) {
+        $updated = $Values[$Config.updatedField]
+        $author = $Values[$Config.authorField]
+        $historyUrl = if ($Values.ContainsKey("__historyUrl")) { [string] $Values["__historyUrl"] } else { "" }
+        $historyLinkText = if ($Values.ContainsKey("__historyLinkText")) { [string] $Values["__historyLinkText"] } else { "View Commit" }
+        if ($addHistoryEntry) {
+            $newEntry = if ([string]::IsNullOrWhiteSpace($historyUrl)) {
+                "- Updated: <b>$updated</b> | Author: <b>$author</b> | Changes: <b>Unavailable</b>"
+            }
+            else {
+                "- Updated: <b>$updated</b> | Author: <b>$author</b> | Changes: [<b>$historyLinkText</b>]($historyUrl)"
+            }
+
+            [void] $seen.Add($newEntry)
+            $historyLines.Add($newEntry)
+        }
+        foreach ($line in (Get-HistoryEntryLines -MetadataInfo $sourceMetadataInfo)) {
+            if ($seen.Add($line)) {
+                $historyLines.Add($line)
+            }
+        }
+
+        if ($null -ne $limit -and $historyLines.Count -gt $limit) {
+            $trimmedHistoryLines = [System.Collections.Generic.List[string]]::new()
+            foreach ($line in @($historyLines | Select-Object -First $limit)) {
+                $trimmedHistoryLines.Add($line)
+            }
+            $historyLines = $trimmedHistoryLines
+        }
+    }
+
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.Add($script:PresentationStartMarker)
+    $lines.Add("<details>")
+    $lines.Add("<summary>Change History</summary>")
+    $lines.Add("")
+    foreach ($line in @($historyLines)) {
+        $lines.Add($line)
+    }
+    $lines.Add("")
+    $lines.Add("</details>")
+    $lines.Add("")
+    if ($Config.includeSeparator) {
+        $lines.Add("---")
+        $lines.Add("")
+    }
+    for ($index = 0; $index -lt [int] $Config.spacingBreaks; $index++) {
+        $lines.Add("<br>")
+    }
+    $lines.Add($script:PresentationEndMarker)
+    ($lines -join $NewLine) + $NewLine
+}
+
+function New-PlainTextPresentation {
+    param(
+        [object] $Config,
+        [string] $NewLine
+    )
+
+    $lines = [System.Collections.Generic.List[string]]::new()
+    if ($Config.includeSeparator) {
+        $lines.Add($script:PlainTextSeparator)
+    }
+    for ($index = 0; $index -lt [int] $Config.spacingBreaks; $index++) {
+        $lines.Add("")
+    }
+
+    if ($lines.Count -eq 0) {
+        return ""
+    }
+
+    ($lines -join $NewLine) + $NewLine
+}
+
+function New-ManagedPresentation {
+    param(
+        [object] $Config,
+        [hashtable] $Values,
+        [string] $NewLine,
+        [object] $MetadataInfo
+    )
+
+    if ($Config.presentationEnabled -and $Config.isMarkdown) {
+        return New-MarkdownPresentation -Config $Config -Values $Values -NewLine $NewLine -MetadataInfo $MetadataInfo
+    }
+
+    if (-not $Config.presentationEnabled) {
+        return New-PlainTextPresentation -Config $Config -NewLine $NewLine
+    }
+
+    ""
+}
+
 function Set-MetadataContent {
     param(
         [string] $Content,
@@ -1594,9 +2102,10 @@ function Set-MetadataContent {
     }
     $updatedLines = Update-MetadataLines -MetadataLines $metadataLines -Values $Values -Config $Config
     $metadataBlock = New-MetadataBlock -Lines $updatedLines -Config $Config -NewLine $NewLine
+    $presentationBlock = New-ManagedPresentation -Config $Config -Values $Values -NewLine $NewLine -MetadataInfo $info
 
     if ($Config.metadataFormat -eq "yaml-front-matter" -or $Config.metadataPlacement -eq "top") {
-        return $metadataBlock + $info.Body
+        return $metadataBlock + $presentationBlock + $info.Body
     }
 
     $body = $info.Body
@@ -1604,7 +2113,7 @@ function Set-MetadataContent {
         $body += $NewLine
     }
 
-    $body + $metadataBlock
+    $body + $presentationBlock + $metadataBlock
 }
 
 function Validate-FileMetadata {
@@ -1632,15 +2141,32 @@ function Validate-FileMetadata {
         return $errors.ToArray()
     }
 
+    if ($MetadataInfo.IsPresentationMalformed) {
+        $errors.Add([pscustomobject]@{
+            Rule = "managed metadata presentation"
+            Current = "malformed"
+            Expected = "managed presentation region must be complete and restorable"
+        })
+    }
+    $expectsPresentation = ($Config.presentationEnabled -and $Config.isMarkdown) -or ((-not $Config.presentationEnabled) -and $Config.includeSeparator)
+    if ($expectsPresentation -and -not $MetadataInfo.HasPresentation) {
+        $errors.Add([pscustomobject]@{
+            Rule = "managed metadata presentation"
+            Current = "missing"
+            Expected = "managed metadata presentation/separator must be present"
+        })
+    }
+
     $versionValue = if ($MetadataInfo.Fields.ContainsKey($Config.versionField)) { $MetadataInfo.Fields[$Config.versionField] } else { $null }
     $createdValue = if ($MetadataInfo.Fields.ContainsKey($Config.createdField)) { $MetadataInfo.Fields[$Config.createdField] } else { $null }
     $updatedValue = if ($MetadataInfo.Fields.ContainsKey($Config.updatedField)) { $MetadataInfo.Fields[$Config.updatedField] } else { $null }
+    $authorValue = if ($MetadataInfo.Fields.ContainsKey($Config.authorField)) { $MetadataInfo.Fields[$Config.authorField] } else { $null }
 
-    if ($null -eq (ConvertTo-NullableInt64 $versionValue)) {
+    if (-not (Test-VersionValue $versionValue)) {
         $errors.Add([pscustomobject]@{
             Rule = $Config.versionField
             Current = $versionValue
-            Expected = "positive integer document revision"
+            Expected = "positive integer or numeric dotted document revision"
         })
     }
 
@@ -1660,6 +2186,14 @@ function Validate-FileMetadata {
         })
     }
 
+    if ($authorValue -isnot [string] -or [string]::IsNullOrWhiteSpace($authorValue) -or ([string] $authorValue).IndexOfAny([char[]]@("`r", "`n")) -ge 0) {
+        $errors.Add([pscustomobject]@{
+            Rule = $Config.authorField
+            Current = $authorValue
+            Expected = "non-empty plain scalar author"
+        })
+    }
+
     $errors.ToArray()
 }
 
@@ -1674,13 +2208,15 @@ function Get-MetadataSnapshot {
             Version = $null
             Created = $null
             Updated = $null
+            Author = $null
         }
     }
 
     [pscustomobject]@{
-        Version = if ($MetadataInfo.Fields.ContainsKey($Config.versionField)) { ConvertTo-NullableInt64 $MetadataInfo.Fields[$Config.versionField] } else { $null }
+        Version = if ($MetadataInfo.Fields.ContainsKey($Config.versionField)) { ConvertTo-VersionString $MetadataInfo.Fields[$Config.versionField] } else { $null }
         Created = if ($MetadataInfo.Fields.ContainsKey($Config.createdField)) { $MetadataInfo.Fields[$Config.createdField] } else { $null }
         Updated = if ($MetadataInfo.Fields.ContainsKey($Config.updatedField)) { $MetadataInfo.Fields[$Config.updatedField] } else { $null }
+        Author = if ($MetadataInfo.Fields.ContainsKey($Config.authorField)) { $MetadataInfo.Fields[$Config.authorField] } else { $null }
     }
 }
 
@@ -1806,6 +2342,78 @@ function Get-ComparisonInfo {
     $comparison
 }
 
+function Get-HistoryLinkInfo {
+    param(
+        [string] $RepoPath,
+        [hashtable] $Comparison = $null
+    )
+
+    $map = $null
+    if (-not [string]::IsNullOrWhiteSpace($HistoryLinkMapPath)) {
+        $mapPath = Resolve-InRootPath -RootPath $script:RepositoryRoot -InputPath $HistoryLinkMapPath
+        if ($null -ne $mapPath -and (Test-Path -LiteralPath $mapPath -PathType Leaf)) {
+            $map = Get-Content -LiteralPath $mapPath -Raw | ConvertFrom-Json -Depth 32
+        }
+    }
+
+    $mapEntry = if ($null -ne $map) { Get-PropertyValue -Object $map -Name $RepoPath } else { $null }
+    if ($null -ne $mapEntry) {
+        return @{
+            Url = [string] (Get-PropertyValue -Object $mapEntry -Name "url")
+            LinkText = [string] (Get-PropertyValue -Object $mapEntry -Name "linkText")
+        }
+    }
+
+    $head = if ($null -ne $Comparison -and -not [string]::IsNullOrWhiteSpace($Comparison.headSha)) { $Comparison.headSha } else { $HeadSha }
+    $repository = $env:GITHUB_REPOSITORY
+    $server = if ([string]::IsNullOrWhiteSpace($env:GITHUB_SERVER_URL)) { "https://github.com" } else { $env:GITHUB_SERVER_URL.TrimEnd("/") }
+    if (-not [string]::IsNullOrWhiteSpace($repository) -and -not [string]::IsNullOrWhiteSpace($head) -and $head -match "^[0-9a-fA-F]{40}$") {
+        return @{
+            Url = "$server/$repository/commit/$head"
+            LinkText = "View Commit"
+        }
+    }
+
+    @{
+        Url = ""
+        LinkText = "View Commit"
+    }
+}
+
+function Resolve-DocumentAuthor {
+    param(
+        [string] $RepoPath,
+        [hashtable] $Comparison = $null
+    )
+
+    if ($null -ne $Comparison -and $Comparison.staleCheckAvailable -and -not [string]::IsNullOrWhiteSpace($Comparison.baseSha) -and -not [string]::IsNullOrWhiteSpace($Comparison.headSha)) {
+        $logResult = Invoke-GitText -Arguments @("-C", $script:RepositoryRoot, "log", "--format=%an", "$($Comparison.baseSha)..$($Comparison.headSha)", "--", $RepoPath)
+        if ($logResult.ExitCode -eq 0) {
+            $authors = @($logResult.Text -split "\r?\n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+            $nonBot = @($authors | Where-Object { $_ -ne "github-actions[bot]" } | Select-Object -First 1)
+            if ($nonBot.Count -gt 0) {
+                return [string] $nonBot[0]
+            }
+            if ($authors.Count -gt 0) {
+                return [string] $authors[0]
+            }
+        }
+    }
+
+    $gitName = Invoke-GitText -Arguments @("-C", $script:RepositoryRoot, "config", "user.name")
+    if ($gitName.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($gitName.Text.Trim())) {
+        return $gitName.Text.Trim()
+    }
+
+    foreach ($candidate in @($env:GIT_AUTHOR_NAME, $env:GITHUB_ACTOR, $env:USERNAME, $env:USER, [Environment]::UserName)) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate)) {
+            return [string] $candidate
+        }
+    }
+
+    "Unknown"
+}
+
 function Convert-ExplicitPathsToRecords {
     param(
         [string[]] $RequestedPaths,
@@ -1919,7 +2527,7 @@ function Initialize-OrUpdateFile {
 
     if ($currentInfo.HasMetadata -and -not $currentInfo.IsMalformed) {
         [object[]] $metadataValidationErrors = @(Validate-FileMetadata -MetadataInfo $currentInfo -Config $config)
-        [object[]] $invalidVersionErrors = @($metadataValidationErrors | Where-Object { $_.Rule -eq $config.versionField })
+        [object[]] $invalidVersionErrors = @($metadataValidationErrors | Where-Object { $_.Rule -eq $config.versionField -and $null -ne $_.Current })
         if ($invalidVersionErrors.Count -gt 0) {
             foreach ($error in $invalidVersionErrors) {
                 Add-FailedFile -Report $Report -Path $repoPath -Rule $error.Rule -Current $error.Current -Expected $error.Expected
@@ -1928,8 +2536,8 @@ function Initialize-OrUpdateFile {
         }
     }
 
-    if ($null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and $null -ne $currentSnapshot.Version -and $currentSnapshot.Version -lt $previousSnapshot.Version) {
-        Add-FailedFile -Report $Report -Path $repoPath -Rule "doc_version must not decrease without explicit rebaseline approval" -Current $currentSnapshot.Version -Expected "greater than or equal to previous committed doc_version $($previousSnapshot.Version)"
+    if ($null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and $null -ne $currentSnapshot.Version -and (Compare-VersionValue $currentSnapshot.Version $previousSnapshot.Version) -lt 0) {
+        Add-FailedFile -Report $Report -Path $repoPath -Rule "Version must not decrease without explicit rebaseline approval" -Current $currentSnapshot.Version -Expected "greater than or equal to previous committed Version $($previousSnapshot.Version)"
         return
     }
 
@@ -1945,16 +2553,27 @@ function Initialize-OrUpdateFile {
         $reason = "missing metadata initialized"
 
         if ($null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and (Test-IsTimestamp $previousSnapshot.Created) -and (Test-IsTimestamp $previousSnapshot.Updated)) {
-            $initialVersion = if ($bodyChanged) { [int64] $previousSnapshot.Version + 1 } else { [int64] $previousSnapshot.Version }
+            $initialVersion = if ($bodyChanged) { Get-IncrementedVersion $previousSnapshot.Version } else { $previousSnapshot.Version }
             $initialCreated = $previousSnapshot.Created
             $initialUpdated = if ($bodyChanged) { $now } else { $previousSnapshot.Updated }
             $reason = if ($bodyChanged) { "body changed; metadata restored from history" } else { "metadata restored from history" }
         }
+        if (Test-IsTimestamp $initialCreated) {
+            $initialCreated = ConvertTo-UtcTimestampValue $initialCreated
+        }
+        if (Test-IsTimestamp $initialUpdated) {
+            $initialUpdated = ConvertTo-UtcTimestampValue $initialUpdated
+        }
+        $author = Resolve-DocumentAuthor -RepoPath $repoPath -Comparison $Comparison
+        $linkInfo = Get-HistoryLinkInfo -RepoPath $repoPath -Comparison $Comparison
 
         $values = @{
             $config.versionField = $initialVersion
             $config.createdField = $initialCreated
             $config.updatedField = $initialUpdated
+            $config.authorField = $author
+            "__historyUrl" = $linkInfo.Url
+            "__historyLinkText" = $linkInfo.LinkText
         }
         $newContent = Set-MetadataContent -Content $textFile.Content -Config $config -Values $values -NewLine $textFile.NewLine
         if ($PSCmdlet.ShouldProcess($repoPath, "Initialize document metadata")) {
@@ -1965,14 +2584,20 @@ function Initialize-OrUpdateFile {
     }
 
     [object[]] $validationErrors = @(Validate-FileMetadata -MetadataInfo $currentInfo -Config $config)
-    [object[]] $repairableErrors = @($validationErrors | Where-Object { $_.Rule -ne $config.versionField })
+    [object[]] $presentationErrors = @($validationErrors | Where-Object { $_.Rule -eq "managed metadata presentation" })
+    if (@($presentationErrors | Where-Object { $_.Current -eq "malformed" }).Count -gt 0 -and ($null -eq $previousInfo -or -not $previousInfo.HasPresentation -or $previousInfo.IsPresentationMalformed)) {
+        Add-FailedFile -Report $Report -Path $repoPath -Rule "managed metadata presentation" -Current "malformed" -Expected "trusted previous generated presentation for safe restoration"
+        return
+    }
+    [object[]] $nonRepairableVersionErrors = @($validationErrors | Where-Object { $_.Rule -eq $config.versionField -and $null -ne $_.Current })
+    [object[]] $repairableErrors = @($validationErrors | Where-Object { -not ($_.Rule -eq $config.versionField -and $null -ne $_.Current) })
     if ($ModeValue -eq "Bootstrap" -and $validationErrors.Length -eq 0) {
         Add-UnchangedFile -Report $Report -Path $repoPath -Reason "metadata valid" -OldVersion $currentSnapshot.Version -NewVersion $currentSnapshot.Version
         return
     }
 
-    if ($validationErrors.Count -gt 0 -and $repairableErrors.Count -ne $validationErrors.Count) {
-        foreach ($error in $validationErrors) {
+    if ($nonRepairableVersionErrors.Count -gt 0) {
+        foreach ($error in $nonRepairableVersionErrors) {
             Add-FailedFile -Report $Report -Path $repoPath -Rule $error.Rule -Current $error.Current -Expected $error.Expected
         }
         return
@@ -1981,14 +2606,17 @@ function Initialize-OrUpdateFile {
     $newVersion = $currentSnapshot.Version
     $newCreated = $currentSnapshot.Created
     $newUpdated = $currentSnapshot.Updated
+    $newAuthor = $currentSnapshot.Author
     $reason = $null
     $shouldWrite = $false
     [object[]] $timestampValidationErrors = @($validationErrors | Where-Object { $_.Rule -in @($config.createdField, $config.updatedField) })
-    $hasManualVersionIncrease = $null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and $null -ne $currentSnapshot.Version -and $currentSnapshot.Version -gt $previousSnapshot.Version
+    $hasManualVersionIncrease = $null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and $null -ne $currentSnapshot.Version -and (Compare-VersionValue $currentSnapshot.Version $previousSnapshot.Version) -gt 0
     $hasValidPreviousTimestamps = $null -ne $previousSnapshot -and (Test-IsTimestamp $previousSnapshot.Created) -and (Test-IsTimestamp $previousSnapshot.Updated)
-    $hasTimestampDriftFromPrevious = $null -ne $previousSnapshot -and ($currentSnapshot.Created -ne $previousSnapshot.Created -or $currentSnapshot.Updated -ne $previousSnapshot.Updated)
+    $hasTimestampDriftFromPrevious = $null -ne $previousSnapshot -and ((-not (Test-TimestampEquivalent $currentSnapshot.Created $previousSnapshot.Created)) -or (-not (Test-TimestampEquivalent $currentSnapshot.Updated $previousSnapshot.Updated)))
+    $hasAuthorDriftFromPrevious = $null -ne $previousSnapshot -and $null -ne $previousSnapshot.Author -and $currentSnapshot.Author -ne $previousSnapshot.Author
+    $hasPresentationDriftFromPrevious = $null -ne $previousInfo -and $currentInfo.HasPresentation -and $previousInfo.HasPresentation -and -not (Test-PresentationEquivalent $currentInfo $previousInfo)
 
-    if ($ModeValue -eq "Update" -and -not $bodyChanged -and ($timestampValidationErrors.Count -gt 0 -or $hasTimestampDriftFromPrevious)) {
+    if ($ModeValue -eq "Update" -and -not $bodyChanged -and ($timestampValidationErrors.Count -gt 0 -or $hasTimestampDriftFromPrevious -or $hasAuthorDriftFromPrevious -or $hasPresentationDriftFromPrevious)) {
         if (-not $hasValidPreviousTimestamps) {
             Add-FailedFile -Report $Report -Path $repoPath -Rule "created/updated timestamp drift could not be safely restored" -Current "created=$($currentSnapshot.Created); updated=$($currentSnapshot.Updated)" -Expected "valid previous committed created and updated timestamps"
             return
@@ -1996,7 +2624,12 @@ function Initialize-OrUpdateFile {
 
         $newCreated = $previousSnapshot.Created
         $newUpdated = $previousSnapshot.Updated
-        $reason = if ($hasManualVersionIncrease) { "metadata repaired; manual version rebaseline" } else { "metadata repaired" }
+        $newAuthor = if ($null -ne $previousSnapshot.Author) { $previousSnapshot.Author } else { $currentSnapshot.Author }
+        $reasonParts = [System.Collections.Generic.List[string]]::new()
+        $reasonParts.Add("metadata repaired")
+        if ($hasManualVersionIncrease) { $reasonParts.Add("manual version rebaseline") }
+        if ($hasPresentationDriftFromPrevious) { $reasonParts.Add("historyTamperDetected"); $reasonParts.Add("historyRestoredFromTrustedPrevious") }
+        $reason = $reasonParts -join "; "
         $shouldWrite = $true
     }
     elseif ($bodyChanged) {
@@ -2010,9 +2643,13 @@ function Initialize-OrUpdateFile {
             }
         }
 
-        $newVersion = [int64] $currentSnapshot.Version + 1
+        $newVersion = Get-IncrementedVersion $currentSnapshot.Version
         $newUpdated = $now
-        $reason = if ($validationErrors.Count -gt 0) { "body changed; metadata repaired" } else { "body changed" }
+        $newAuthor = Resolve-DocumentAuthor -RepoPath $repoPath -Comparison $Comparison
+        $reason = if ($validationErrors.Count -gt 0 -or $hasPresentationDriftFromPrevious) { "body changed; metadata repaired" } else { "body changed" }
+        if ($hasPresentationDriftFromPrevious) {
+            $reason = "$reason; historyTamperDetected; historyRestoredFromTrustedPrevious"
+        }
         $shouldWrite = $true
     }
     elseif ($validationErrors.Count -gt 0) {
@@ -2025,6 +2662,7 @@ function Initialize-OrUpdateFile {
         if (-not (Test-IsTimestamp $newUpdated)) {
             $newUpdated = $now
         }
+        $newAuthor = if ([string]::IsNullOrWhiteSpace([string] $currentSnapshot.Author)) { Resolve-DocumentAuthor -RepoPath $repoPath -Comparison $Comparison } else { $currentSnapshot.Author }
         $reason = "metadata repaired"
         $shouldWrite = $true
     }
@@ -2040,10 +2678,25 @@ function Initialize-OrUpdateFile {
     }
 
     if ($shouldWrite) {
+        if ([string]::IsNullOrWhiteSpace([string] $newAuthor)) {
+            $newAuthor = Resolve-DocumentAuthor -RepoPath $repoPath -Comparison $Comparison
+        }
+        if (Test-IsTimestamp $newCreated) {
+            $newCreated = ConvertTo-UtcTimestampValue $newCreated
+        }
+        if (Test-IsTimestamp $newUpdated) {
+            $newUpdated = ConvertTo-UtcTimestampValue $newUpdated
+        }
+        $linkInfo = Get-HistoryLinkInfo -RepoPath $repoPath -Comparison $Comparison
         $values = @{
             $config.versionField = $newVersion
             $config.createdField = $newCreated
             $config.updatedField = $newUpdated
+            $config.authorField = $newAuthor
+            "__historyUrl" = $linkInfo.Url
+            "__historyLinkText" = $linkInfo.LinkText
+            "__sourcePresentationInfo" = if ($hasPresentationDriftFromPrevious) { $previousInfo } else { $currentInfo }
+            "__addHistoryEntry" = $bodyChanged -or -not $currentInfo.HasPresentation
         }
         $newContent = Set-MetadataContent -Content $textFile.Content -Config $config -Values $values -NewLine $textFile.NewLine
         if ($PSCmdlet.ShouldProcess($repoPath, "Update document metadata")) {
@@ -2081,7 +2734,7 @@ function Analyze-GovernedFile {
     $previousInfo = if ($null -ne $previousContent) { Get-MetadataInfo -Content $previousContent -Config $config } else { $null }
     $previousSnapshot = if ($null -ne $previousInfo) { Get-MetadataSnapshot -MetadataInfo $previousInfo -Config $config } else { $null }
     $bodyChanged = if ($null -ne $previousInfo) { $currentInfo.Body -ne $previousInfo.Body } else { $false }
-    $hasValidPreviousMetadata = $null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and (Test-IsTimestamp $previousSnapshot.Created) -and (Test-IsTimestamp $previousSnapshot.Updated)
+    $hasValidPreviousMetadata = $null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and (Test-IsTimestamp $previousSnapshot.Created) -and (Test-IsTimestamp $previousSnapshot.Updated) -and -not [string]::IsNullOrWhiteSpace([string] $previousSnapshot.Author)
 
     if (-not $Comparison.staleCheckAvailable) {
         Add-StaleSkippedFile -Report $Report -Path $repoPath -Reason $Comparison.reason
@@ -2109,25 +2762,33 @@ function Analyze-GovernedFile {
     }
 
     [object[]] $validationErrors = @(Validate-FileMetadata -MetadataInfo $currentInfo -Config $config)
-    [object[]] $versionErrors = @($validationErrors | Where-Object { $_.Rule -eq $config.versionField })
+    [object[]] $presentationErrors = @($validationErrors | Where-Object { $_.Rule -eq "managed metadata presentation" })
+    if (@($presentationErrors | Where-Object { $_.Current -eq "malformed" }).Count -gt 0 -and ($null -eq $previousInfo -or -not $previousInfo.HasPresentation -or $previousInfo.IsPresentationMalformed)) {
+        Add-UnrecoverableFile -Report $Report -Path $repoPath -Reason "malformed managed presentation cannot be safely restored" -Current "malformed" -Expected "trusted previous generated presentation"
+        Add-FailedFile -Report $Report -Path $repoPath -Rule "managed metadata presentation" -Current "malformed" -Expected "trusted previous generated presentation for safe restoration"
+        return
+    }
+    [object[]] $versionErrors = @($validationErrors | Where-Object { $_.Rule -eq $config.versionField -and $null -ne $_.Current })
     if ($versionErrors.Count -gt 0) {
         foreach ($error in $versionErrors) {
-            Add-UnrecoverableFile -Report $Report -Path $repoPath -Reason "invalid doc_version is not safely repairable" -Current $error.Current -Expected $error.Expected
+            Add-UnrecoverableFile -Report $Report -Path $repoPath -Reason "invalid Version is not safely repairable" -Current $error.Current -Expected $error.Expected
             Add-FailedFile -Report $Report -Path $repoPath -Rule $error.Rule -Current $error.Current -Expected $error.Expected
         }
         return
     }
 
-    if ($null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and $null -ne $currentSnapshot.Version -and $currentSnapshot.Version -lt $previousSnapshot.Version) {
-        $rule = "doc_version must not decrease without explicit rebaseline approval"
-        Add-UnrecoverableFile -Report $Report -Path $repoPath -Reason $rule -Current $currentSnapshot.Version -Expected "greater than or equal to previous committed doc_version $($previousSnapshot.Version)"
-        Add-FailedFile -Report $Report -Path $repoPath -Rule $rule -Current $currentSnapshot.Version -Expected "greater than or equal to previous committed doc_version $($previousSnapshot.Version)"
+    if ($null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and $null -ne $currentSnapshot.Version -and (Compare-VersionValue $currentSnapshot.Version $previousSnapshot.Version) -lt 0) {
+        $rule = "Version must not decrease without explicit rebaseline approval"
+        Add-UnrecoverableFile -Report $Report -Path $repoPath -Reason $rule -Current $currentSnapshot.Version -Expected "greater than or equal to previous committed Version $($previousSnapshot.Version)"
+        Add-FailedFile -Report $Report -Path $repoPath -Rule $rule -Current $currentSnapshot.Version -Expected "greater than or equal to previous committed Version $($previousSnapshot.Version)"
         return
     }
 
     [object[]] $timestampErrors = @($validationErrors | Where-Object { $_.Rule -in @($config.createdField, $config.updatedField) })
-    $hasManualVersionIncrease = $null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and $null -ne $currentSnapshot.Version -and $currentSnapshot.Version -gt $previousSnapshot.Version
-    $hasTimestampDriftFromPrevious = $null -ne $previousSnapshot -and ($currentSnapshot.Created -ne $previousSnapshot.Created -or $currentSnapshot.Updated -ne $previousSnapshot.Updated)
+    $hasManualVersionIncrease = $null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and $null -ne $currentSnapshot.Version -and (Compare-VersionValue $currentSnapshot.Version $previousSnapshot.Version) -gt 0
+    $hasTimestampDriftFromPrevious = $null -ne $previousSnapshot -and ((-not (Test-TimestampEquivalent $currentSnapshot.Created $previousSnapshot.Created)) -or (-not (Test-TimestampEquivalent $currentSnapshot.Updated $previousSnapshot.Updated)))
+    $hasAuthorDriftFromPrevious = $null -ne $previousSnapshot -and $null -ne $previousSnapshot.Author -and $currentSnapshot.Author -ne $previousSnapshot.Author
+    $hasPresentationDriftFromPrevious = $null -ne $previousInfo -and $currentInfo.HasPresentation -and $previousInfo.HasPresentation -and -not (Test-PresentationEquivalent $currentInfo $previousInfo)
 
     if ($bodyChanged) {
         if ($timestampErrors.Count -gt 0 -and -not $hasValidPreviousMetadata -and -not (Test-IsTimestamp $currentSnapshot.Created)) {
@@ -2146,10 +2807,20 @@ function Analyze-GovernedFile {
         return
     }
 
-    if ($timestampErrors.Count -gt 0 -or $hasTimestampDriftFromPrevious) {
+    if ($timestampErrors.Count -gt 0 -and -not $hasTimestampDriftFromPrevious) {
+        Add-RepairableFile -Report $Report -Path $repoPath -Reason "metadata fields can be repaired" -Categories @("repaired")
+        return
+    }
+
+    if ($timestampErrors.Count -gt 0 -or $hasTimestampDriftFromPrevious -or $hasAuthorDriftFromPrevious -or $hasPresentationDriftFromPrevious) {
         if ($hasValidPreviousMetadata) {
-            $reason = if ($hasManualVersionIncrease) { "metadata-only timestamp drift can be restored; manual version rebaseline preserved" } else { "metadata-only timestamp drift can be restored" }
-            Add-RepairableFile -Report $Report -Path $repoPath -Reason $reason -Categories @("restoredFromHistory", "repaired")
+            $reason = if ($hasManualVersionIncrease) { "metadata-only drift can be restored; manual version rebaseline preserved" } else { "metadata-only drift can be restored" }
+            $categories = @("restoredFromHistory", "repaired")
+            if ($hasPresentationDriftFromPrevious) {
+                $reason = "$reason; historyTamperDetected; historyRestoredFromTrustedPrevious"
+                $categories += @("historyTamperDetected", "historyRestoredFromTrustedPrevious")
+            }
+            Add-RepairableFile -Report $Report -Path $repoPath -Reason $reason -Categories $categories
             return
         }
 
@@ -2165,10 +2836,7 @@ function Analyze-GovernedFile {
     }
 
     if ($validationErrors.Count -gt 0) {
-        foreach ($error in $validationErrors) {
-            Add-UnrecoverableFile -Report $Report -Path $repoPath -Reason "metadata validation failure is not safely repairable" -Current $error.Current -Expected $error.Expected
-            Add-FailedFile -Report $Report -Path $repoPath -Rule $error.Rule -Current $error.Current -Expected $error.Expected
-        }
+        Add-RepairableFile -Report $Report -Path $repoPath -Reason "metadata fields can be repaired" -Categories @("repaired")
         return
     }
 
@@ -2222,20 +2890,28 @@ function Test-GovernedFile {
 
     $previousInfo = Get-MetadataInfo -Content $previousContent -Config $config
     $previousSnapshot = Get-MetadataSnapshot -MetadataInfo $previousInfo -Config $config
-    if ($null -ne $previousSnapshot.Version -and $currentSnapshot.Version -lt $previousSnapshot.Version) {
-        Add-FailedFile -Report $Report -Path $repoPath -Rule "doc_version must not decrease without explicit rebaseline approval" -Current $currentSnapshot.Version -Expected "greater than or equal to previous committed doc_version $($previousSnapshot.Version)"
+    if ($null -ne $previousSnapshot.Version -and $null -ne $currentSnapshot.Version -and (Compare-VersionValue $currentSnapshot.Version $previousSnapshot.Version) -lt 0) {
+        Add-FailedFile -Report $Report -Path $repoPath -Rule "Version must not decrease without explicit rebaseline approval" -Current $currentSnapshot.Version -Expected "greater than or equal to previous committed Version $($previousSnapshot.Version)"
         return
     }
 
     $bodyChanged = $currentInfo.Body -ne $previousInfo.Body
     if (-not $bodyChanged) {
         Add-StaleSkippedFile -Report $Report -Path $repoPath -Reason "no body change"
-        if ($null -ne $previousSnapshot.Created -and $currentSnapshot.Created -ne $previousSnapshot.Created) {
+        if ($null -ne $previousSnapshot.Created -and -not (Test-TimestampEquivalent $currentSnapshot.Created $previousSnapshot.Created)) {
             Add-FailedFile -Report $Report -Path $repoPath -Rule $config.createdField -Current $currentSnapshot.Created -Expected "unchanged when body content did not change"
             return
         }
-        if ($null -ne $previousSnapshot.Updated -and $currentSnapshot.Updated -ne $previousSnapshot.Updated) {
+        if ($null -ne $previousSnapshot.Updated -and -not (Test-TimestampEquivalent $currentSnapshot.Updated $previousSnapshot.Updated)) {
             Add-FailedFile -Report $Report -Path $repoPath -Rule $config.updatedField -Current $currentSnapshot.Updated -Expected "unchanged when body content did not change"
+            return
+        }
+        if ($null -ne $previousSnapshot.Author -and $currentSnapshot.Author -ne $previousSnapshot.Author) {
+            Add-FailedFile -Report $Report -Path $repoPath -Rule $config.authorField -Current $currentSnapshot.Author -Expected "unchanged when body content did not change"
+            return
+        }
+        if ($currentInfo.HasPresentation -and $previousInfo.HasPresentation -and -not (Test-PresentationEquivalent $currentInfo $previousInfo)) {
+            Add-FailedFile -Report $Report -Path $repoPath -Rule "managed history integrity" -Current "generated presentation changed" -Expected "unchanged generated presentation when body content did not change"
             return
         }
 
@@ -2243,8 +2919,8 @@ function Test-GovernedFile {
         return
     }
 
-    if ($null -ne $previousSnapshot.Version -and $currentSnapshot.Version -le $previousSnapshot.Version) {
-        Add-FailedFile -Report $Report -Path $repoPath -Rule $config.versionField -Current $currentSnapshot.Version -Expected "greater than previous doc_version $($previousSnapshot.Version) because body content changed"
+    if ($null -ne $previousSnapshot.Version -and $null -ne $currentSnapshot.Version -and (Compare-VersionValue $currentSnapshot.Version $previousSnapshot.Version) -le 0) {
+        Add-FailedFile -Report $Report -Path $repoPath -Rule $config.versionField -Current $currentSnapshot.Version -Expected "greater than previous Version $($previousSnapshot.Version) because body content changed"
         return
     }
 
@@ -2337,8 +3013,8 @@ function Write-HumanReport {
             Path = $_.path
             Format = $_.metadataFormat
             Placement = $_.metadataPlacement
-            OldVersion = ConvertTo-DisplayValue $_.oldDocVersion
-            NewVersion = ConvertTo-DisplayValue $_.newDocVersion
+            OldVersion = ConvertTo-DisplayValue $_.oldVersion
+            NewVersion = ConvertTo-DisplayValue $_.newVersion
             OldUpdated = ConvertTo-DisplayValue $_.oldUpdated
             NewUpdated = ConvertTo-DisplayValue $_.newUpdated
             Reason = $_.reason
@@ -2454,8 +3130,8 @@ function Write-GitHubSummary {
             Path = $_.path
             Format = $_.metadataFormat
             Placement = $_.metadataPlacement
-            OldVersion = ConvertTo-DisplayValue $_.oldDocVersion
-            NewVersion = ConvertTo-DisplayValue $_.newDocVersion
+            OldVersion = ConvertTo-DisplayValue $_.oldVersion
+            NewVersion = ConvertTo-DisplayValue $_.newVersion
             OldUpdated = ConvertTo-DisplayValue $_.oldUpdated
             NewUpdated = ConvertTo-DisplayValue $_.newUpdated
             Reason = $_.reason

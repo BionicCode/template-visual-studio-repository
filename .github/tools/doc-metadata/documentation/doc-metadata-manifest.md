@@ -1,137 +1,158 @@
 ---
-doc_version: 1
-created: 2026-05-26T01:40:37+02:00
-updated: 2026-05-26T01:40:37+02:00
+Version: 1
+Created: 2026-05-26T19:08:33+00:00
+Updated: 2026-05-26T19:08:33+00:00
+Author: BionicCode
 ---
+<!-- doc-metadata-presentation:start -->
+<details>
+<summary>Change History</summary>
+
+- Updated: <b>2026-05-26T19:08:33+00:00</b> | Author: <b>BionicCode</b> | Changes: <b>Unavailable</b>
+
+</details>
+
+---
+
+<br>
+<br>
+<!-- doc-metadata-presentation:end -->
 # Document Metadata Manifest
 
-`doc-metadata-manifest.json` defines the repository-owned document metadata policy. The repository owns this manifest; the script and workflow only execute the policy it describes.
+## Purpose
 
-## Complete Shape
+`.github/tools/doc-metadata/doc-metadata-manifest.json` defines candidate files, metadata defaults, presentation defaults, and eligibility rules. It is the only governance policy source for document metadata.
+
+## Defaults First
+
+Defaults apply to every string include entry and to object include entries unless they override specific settings.
 
 ```json
 {
-  "$schema": "./doc-metadata-manifest.schema.json",
-  "version": 1,
   "defaults": {
-    "metadataFormat": "yaml-front-matter",
-    "metadataPlacement": "top",
-    "versionField": "doc_version",
-    "createdField": "created",
-    "updatedField": "updated",
-    "versioningMode": "body-content-change",
-    "timestampFormat": "iso-8601-offset"
-  },
-  "documentEligibility": {
-    "allowedExtensions": [ ".md", ".markdown", ".txt" ],
-    "additionalAllowedExtensions": [],
-    "deniedExtensions": [],
-    "deniedPaths": [],
-    "allowExtensionless": false,
-    "failOnIneligibleMatches": false
-  },
+    "metadata": {
+      "format": "yaml-front-matter",
+      "placement": "top",
+      "versionField": "Version",
+      "createdField": "Created",
+      "updatedField": "Updated",
+      "authorField": "Author",
+      "versioningMode": "body-content-change",
+      "timestampFormat": "rfc3339-utc"
+    },
+    "presentation": {
+      "enabled": true,
+      "historyLimit": 20,
+      "includeSeparator": true,
+      "spacingBreaks": 2
+    }
+  }
+}
+```
+
+File-format conventions are applied after manifest defaults. Markdown files get rich presentation by default. Plain text files get compact metadata by default.
+
+## Participation Flow
+
+`include` selects candidate files.
+
+`exclude` removes candidates from broad include patterns. The default is `[]`.
+
+`documentEligibility` filters candidates by extension, denied path, strict UTF-8 text decoding, and binary detection.
+
+Only eligible governed files can be analyzed, updated, bootstrapped, or repaired.
+
+## Include Entries
+
+String include entries use defaults:
+
+```json
+{
   "include": [
     "README.md",
-    "docs/**/*.md",
+    "*AGENT*.md",
     "docs/**/*.markdown"
-  ],
-  "exclude": [
-    "**/.git/**",
-    "**/node_modules/**",
-    "**/build/**",
-    "**/dist/**"
-  ],
-  "overrides": [
+  ]
+}
+```
+
+Object include entries use `pattern` plus scoped settings:
+
+```json
+{
+  "include": [
     {
-      "include": [ "specs/**/*.txt" ],
-      "metadataFormat": "comment-block",
-      "metadataPlacement": "bottom",
-      "commentStart": "<!-- doc-metadata",
-      "commentEnd": "-->"
+      "pattern": "src/*AGENT*.md",
+      "presentation": {
+        "historyLimit": 30,
+        "includeSeparator": false,
+        "spacingBreaks": 1
+      }
     }
   ]
 }
 ```
 
-## Type Placement
+If multiple include entries match the same file, their effective configuration must be identical. Conflicting matches fail validation instead of being silently merged.
 
-| Type | Placement | Valid Parent | Parent Property | Description |
-|---|---|---|---|---|
-| `ManifestDocument` | Top-level object | None | None | Manifest root containing schema metadata, defaults, eligibility, patterns, and overrides. |
-| `MetadataSettings` | Nested object | `ManifestDocument` or `ManifestOverride` | `defaults`, `overrides[]` | Metadata format, field names, placement, and timestamp/version policy. |
-| `DocumentEligibility` | Nested object | `ManifestDocument` | `documentEligibility` | Extension, path, and strict-text guard for manifest matches. |
-| `ManifestOverride` | Array item | `ManifestDocument` | `overrides[]` | Per-pattern metadata settings and comment-block markers. |
-| `PatternEntry` | Scalar or object | `ManifestDocument` or `ManifestOverride` | `include[]`, `exclude[]` | Repository-relative glob or future-compatible pattern object. |
+## Eligibility Example
 
-## Glob Semantics
-
-Patterns are matched against repository-root-relative POSIX paths with `/` separators.
-
-`*` matches within one path segment. It does not cross `/`. `*AGENT*.md` matches `AGENTS.md`, `AGENT_GUARDRAILS.md`, and `NET_AGENTS.md`, but not `docs/AGENTS.md`.
-
-`**/` matches zero or more path segments. `**/*AGENT*.md` matches root-level and nested files, including `docs/AGENTS.md`.
-
-Matching is case-sensitive. Add separate patterns for case variants when needed.
-
-## Eligibility Examples
-
-Broad pattern with default eligibility:
+The pattern `AGENTS.*` may match `AGENTS.md` and `AGENTS.cs`. With default eligibility, only `AGENTS.md` is managed because `.cs` is not a default document extension.
 
 ```json
 {
-  "include": [ "AGENTS.*" ]
+  "include": [
+    "AGENTS.*"
+  ],
+  "documentEligibility": {
+    "allowedExtensions": [".md", ".markdown", ".txt"],
+    "additionalAllowedExtensions": [],
+    "deniedExtensions": [],
+    "deniedPaths": [],
+    "allowExtensionless": false,
+    "failOnIneligibleMatches": false
+  }
 }
 ```
 
-`AGENTS.md` is eligible. `AGENTS.cs` is reported as `extension not allowed` and is never mutated.
+> [!TIP]
+> Add `additionalAllowedExtensions` for document-like formats such as `.adoc`. Do not broadly allow source or config extensions unless the files are truly human-facing documents.
 
-Allow AsciiDoc as an additional document extension:
+## Broad Include with Exclude
 
 ```json
 {
-  "documentEligibility": {
-    "additionalAllowedExtensions": [ ".adoc" ]
-  },
   "include": [
-    "docs/**/*.adoc"
+    "docs/**/*"
+  ],
+  "exclude": [
+    "docs/generated/**"
   ]
 }
 ```
 
-Deny generated documentation even when the extension is allowed:
+Use `exclude` for intentionally broad globs. Do not rely on workflow `paths` filters to define governed files.
+
+## Plain Text Defaults
+
+`.txt` files are eligible by default, but rich Markdown presentation is disabled by convention. They receive compact metadata and a plain separator with physical blank lines.
 
 ```json
 {
-  "documentEligibility": {
-    "deniedPaths": [
-      "docs/generated/**"
-    ]
-  }
+  "include": [
+    {
+      "pattern": "**/*.txt",
+      "presentation": {
+        "enabled": false,
+        "historyLimit": 0,
+        "includeSeparator": true,
+        "spacingBreaks": 2
+      }
+    }
+  ]
 }
 ```
 
-Fail when broad globs match ineligible files:
+## Scoped Settings
 
-```json
-{
-  "documentEligibility": {
-    "failOnIneligibleMatches": true
-  }
-}
-```
-
-## Override Examples
-
-Bottom comment-block metadata for text specifications:
-
-```json
-{
-  "include": [ "specs/**/*.txt" ],
-  "metadataFormat": "comment-block",
-  "metadataPlacement": "bottom",
-  "commentStart": "<!-- doc-metadata",
-  "commentEnd": "-->"
-}
-```
-
-Markdown front matter must stay at the top. An override that inherits `yaml-front-matter` and sets `metadataPlacement` to `bottom` is invalid.
+Scoped configuration belongs directly on include object entries so file selection and behavior stay together.

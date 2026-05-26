@@ -1,29 +1,40 @@
 ---
-doc_version: 1
-created: 2026-05-26T01:40:38+02:00
-updated: 2026-05-26T01:40:38+02:00
+Version: 1
+Created: 2026-05-26T19:08:33+00:00
+Updated: 2026-05-26T19:08:33+00:00
+Author: BionicCode
 ---
-# MetadataSettings
+<!-- doc-metadata-presentation:start -->
+<details>
+<summary>Change History</summary>
 
-Metadata behavior for files matched by a manifest include pattern. `defaults` requires all fields. Overrides may specify only fields they change, but the merged effective configuration must still be valid.
+- Updated: <b>2026-05-26T19:08:33+00:00</b> | Author: <b>BionicCode</b> | Changes: <b>Unavailable</b>
 
-## Fields
+</details>
 
-| Field | Required in defaults | Type | Description |
-|---|---:|---|---|
-| `metadataFormat` | Yes | enum | `yaml-front-matter` or `comment-block`. |
-| `metadataPlacement` | Yes | enum | `top` or `bottom`. YAML front matter supports only `top`. |
-| `versionField` | Yes | string | Managed positive-integer document revision field. |
-| `createdField` | Yes | string | Managed immutable metadata initialization timestamp field. |
-| `updatedField` | Yes | string | Managed body-content-change timestamp field. |
-| `versioningMode` | Yes | enum | Must be `body-content-change`. |
-| `timestampFormat` | Yes | enum | Must be `iso-8601-offset`. |
-| `commentStart` | Conditional | string | Required for effective `comment-block` metadata. |
-| `commentLinePrefix` | No | string | Optional prefix before each metadata line in a comment block. |
-| `commentEnd` | Conditional | string | Required for effective `comment-block` metadata. |
+---
 
-## Placement Rules
+<br>
+<br>
+<!-- doc-metadata-presentation:end -->
+# Metadata Settings
 
-`yaml-front-matter` must use `metadataPlacement: "top"`.
+`metadata` settings define the managed header contract for a governed file.
 
-`comment-block` may use `top` or `bottom`. Bottom placement is useful for text specifications where metadata should not interrupt the opening content.
+| Property | Type | Description |
+| --- | --- | --- |
+| `format` | string | `yaml-front-matter` or `comment-block`. |
+| `placement` | string | `top` or `bottom`; YAML front matter supports `top` only. |
+| `versionField` | string | Defaults to `Version`. |
+| `createdField` | string | Defaults to `Created`. |
+| `updatedField` | string | Defaults to `Updated`. |
+| `authorField` | string | Defaults to `Author`. |
+| `versioningMode` | string | Only `body-content-change` is supported. |
+| `timestampFormat` | string | `rfc3339-utc`; generated values use `+00:00`. |
+| `commentStart` | string | Required for effective `comment-block`. |
+| `commentLinePrefix` | string | Optional metadata-line prefix for comment blocks. |
+| `commentEnd` | string | Required for effective `comment-block`. |
+
+`Version` accepts positive integer and numeric dotted values such as `2.1.2`. Automatic increments update the first component only.
+
+Custom front matter fields are preserved and ignored by metadata automation.

@@ -1,38 +1,46 @@
 ---
-doc_version: 1
-created: 2026-05-26T01:40:38+02:00
-updated: 2026-05-26T01:40:38+02:00
+Version: 1
+Created: 2026-05-26T19:08:33+00:00
+Updated: 2026-05-26T19:08:33+00:00
+Author: BionicCode
 ---
-# PatternEntry
+<!-- doc-metadata-presentation:start -->
+<details>
+<summary>Change History</summary>
 
-A repository-root-relative glob string or future-compatible object entry.
+- Updated: <b>2026-05-26T19:08:33+00:00</b> | Author: <b>BionicCode</b> | Changes: <b>Unavailable</b>
 
-## Shapes
+</details>
+
+---
+
+<br>
+<br>
+<!-- doc-metadata-presentation:end -->
+# Include Entry
+
+`include` entries define candidate files.
+
+String entries use defaults:
 
 ```json
-"docs/**/*.md"
+"README.md"
 ```
+
+Object entries use `pattern` plus scoped settings:
 
 ```json
 {
-  "pattern": "docs/**/*.md"
+  "pattern": "src/*AGENT*.md",
+  "presentation": {
+    "historyLimit": 30,
+    "spacingBreaks": 1
+  }
 }
 ```
 
-## Glob Rules
+`*` does not cross `/`. `*AGENT*.md` matches `AGENTS.md`, `AGENT_GUARDRAILS.md`, and `NET_AGENTS.md` at the repository root, but not `docs/AGENTS.md`.
 
-Patterns are normalized to repository-relative paths with `/` separators.
+Use `**/*AGENT*.md` for root and nested matches. Glob matching is case-sensitive; add explicit variants when needed.
 
-`*` matches within one path segment only. It does not cross `/`.
-
-`**/` matches zero or more path segments. Use `**/*AGENT*.md` to match both root-level and nested `AGENT` files.
-
-Matching is case-sensitive.
-
-## Examples
-
-| Pattern | Matches | Does not match |
-|---|---|---|
-| `*AGENT*.md` | `AGENTS.md`, `AGENT_GUARDRAILS.md`, `NET_AGENTS.md` | `docs/AGENTS.md`, `agents.md` |
-| `**/*AGENT*.md` | `AGENTS.md`, `docs/AGENTS.md` | `agents.md` |
-| `docs/**/*.md` | `docs/readme.md`, `docs/reference/type.md` | `README.md` |
+If multiple include entries match a file, their effective settings must be identical or validation fails.

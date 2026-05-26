@@ -2,13 +2,22 @@
   "$schema": "./doc-metadata-manifest.schema.json",
   "version": 1,
   "defaults": {
-    "metadataFormat": "yaml-front-matter",
-    "metadataPlacement": "top",
-    "versionField": "doc_version",
-    "createdField": "created",
-    "updatedField": "updated",
-    "versioningMode": "body-content-change",
-    "timestampFormat": "iso-8601-offset"
+    "metadata": {
+      "format": "yaml-front-matter",
+      "placement": "top",
+      "versionField": "Version",
+      "createdField": "Created",
+      "updatedField": "Updated",
+      "authorField": "Author",
+      "versioningMode": "body-content-change",
+      "timestampFormat": "rfc3339-utc"
+    },
+    "presentation": {
+      "enabled": true,
+      "historyLimit": 20,
+      "includeSeparator": true,
+      "spacingBreaks": 2
+    }
   },
   "documentEligibility": {
     "allowedExtensions": [
@@ -35,30 +44,16 @@
     ".github/instructions/**/*.md",
     ".github/*COPILOT*.md",
     ".github/*copilot*.md",
-    ".github/*AGENT*.md"
-  ],
-  "exclude": [
-    "**/.git/**",
-    "**/.vs/**",
-    "**/.idea/**",
-    "**/bin/**",
-    "**/obj/**",
-    "**/node_modules/**",
-    "**/packages/**",
-    "**/artifacts/**",
-    "**/dist/**",
-    "**/build/**",
-    "**/out/**"
-  ],
-  "overrides": [
+    ".github/*AGENT*.md",
     {
-      "include": [
-        "specs/**/*.txt"
-      ],
-      "metadataFormat": "comment-block",
-      "metadataPlacement": "bottom",
-      "commentStart": "<!-- doc-metadata",
-      "commentEnd": "-->"
+      "pattern": "**/*.txt",
+      "presentation": {
+        "enabled": false,
+        "historyLimit": 0,
+        "includeSeparator": true,
+        "spacingBreaks": 2
+      }
     }
-  ]
+  ],
+  "exclude": []
 }

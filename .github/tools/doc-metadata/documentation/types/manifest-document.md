@@ -1,59 +1,49 @@
 ---
-doc_version: 1
-created: 2026-05-26T01:40:38+02:00
-updated: 2026-05-26T01:40:38+02:00
+Version: 1
+Created: 2026-05-26T19:08:33+00:00
+Updated: 2026-05-26T19:08:33+00:00
+Author: BionicCode
 ---
-# ManifestDocument
+<!-- doc-metadata-presentation:start -->
+<details>
+<summary>Change History</summary>
 
-The top-level document metadata manifest object. This type has no parent.
+- Updated: <b>2026-05-26T19:08:33+00:00</b> | Author: <b>BionicCode</b> | Changes: <b>Unavailable</b>
 
-## Shape
+</details>
+
+---
+
+<br>
+<br>
+<!-- doc-metadata-presentation:end -->
+# Manifest Document
+
+The manifest document is `.github/tools/doc-metadata/doc-metadata-manifest.json`.
 
 ```json
 {
   "$schema": "./doc-metadata-manifest.schema.json",
   "version": 1,
   "defaults": {
-    "metadataFormat": "yaml-front-matter",
-    "metadataPlacement": "top",
-    "versionField": "doc_version",
-    "createdField": "created",
-    "updatedField": "updated",
-    "versioningMode": "body-content-change",
-    "timestampFormat": "iso-8601-offset"
+    "metadata": {
+      "format": "yaml-front-matter",
+      "placement": "top",
+      "versionField": "Version",
+      "createdField": "Created",
+      "updatedField": "Updated",
+      "authorField": "Author"
+    },
+    "presentation": {
+      "enabled": true,
+      "historyLimit": 20,
+      "includeSeparator": true,
+      "spacingBreaks": 2
+    }
   },
-  "documentEligibility": {
-    "allowedExtensions": [ ".md", ".markdown", ".txt" ],
-    "additionalAllowedExtensions": [],
-    "deniedExtensions": [],
-    "deniedPaths": [],
-    "allowExtensionless": false,
-    "failOnIneligibleMatches": false
-  },
-  "include": [ "README.md" ],
-  "exclude": [ "**/build/**" ],
-  "overrides": []
+  "include": ["README.md"],
+  "exclude": []
 }
 ```
 
-## Fields
-
-| Field | Required | Type | Description |
-|---|---:|---|---|
-| `$schema` | Yes | string | Relative schema path for editor tooling. |
-| `version` | Yes | integer | Must be `1`. |
-| `defaults` | Yes | `MetadataSettings` | Default metadata behavior. |
-| `documentEligibility` | No | `DocumentEligibility` | Eligibility policy for manifest matches. |
-| `include` | Yes | `PatternEntry[]` | Default governed file patterns. |
-| `exclude` | Yes | `PatternEntry[]` | Global exclusion patterns. |
-| `overrides` | No | `ManifestOverride[]` | Per-pattern metadata settings. |
-
-## Child Values
-
-| Child | Parent property | Type |
-|---|---|---|
-| Default metadata policy | `defaults` | `MetadataSettings` |
-| Eligibility policy | `documentEligibility` | `DocumentEligibility` |
-| Default include patterns | `include[]` | `PatternEntry` |
-| Default exclude patterns | `exclude[]` | `PatternEntry` |
-| Overrides | `overrides[]` | `ManifestOverride` |
+Unknown top-level properties fail validation.

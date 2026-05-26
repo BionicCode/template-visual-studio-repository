@@ -137,7 +137,7 @@ jobs:
       contents: write
       pull-requests: write
     concurrency:
-      group: doc-metadata-repair-${{ github.event.pull_request.head.ref || github.ref_name }}
+      group: codex-doc-metadata-repair-${{ github.event.pull_request.head.ref || github.ref_name }}
       cancel-in-progress: false
 
     steps:
@@ -203,8 +203,13 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($safeTarget)) {
             $safeTarget = "default"
           }
+          if ($safeTarget.Length -gt 48) {
+            $safeTarget = $safeTarget.Substring(0, 48).Trim('-')
+          }
+          $hashBytes = [System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($targetBranch))
+          $hash = [System.Convert]::ToHexString($hashBytes).Substring(0, 12).ToLowerInvariant()
 
-          $repairBranch = "doc-metadata/repair/$safeTarget"
+          $repairBranch = "codex/doc-metadata-repair/$safeTarget-$hash"
           git checkout -B $repairBranch
           "repair_branch=$repairBranch" >> $env:GITHUB_OUTPUT
 
@@ -235,6 +240,17 @@ jobs:
             exit 0
           }
 
+          $commitSha = "${{ github.event.pull_request.head.sha || github.sha }}"
+          $commitUrl = "https://github.com/${{ github.repository }}/commit/$commitSha"
+          $historyLinks = [ordered]@{}
+          foreach ($path in $paths) {
+            $historyLinks[$path] = [ordered]@{
+              url = $commitUrl
+              linkText = "View Commit"
+            }
+          }
+          $historyLinks | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath doc-metadata-links.json -Encoding utf8NoBOM
+
           ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 `
             -Mode Update `
             -Root . `
@@ -242,6 +258,7 @@ jobs:
             -EventName "${{ github.event_name }}" `
             -EventPayloadPath "${{ github.event_path }}" `
             -HeadSha "${{ github.sha }}" `
+            -HistoryLinkMapPath doc-metadata-links.json `
             -ChangedFilesOutputPath doc-metadata-changed-files.json `
             -ReportOutputPath doc-metadata-repair-report.json
 

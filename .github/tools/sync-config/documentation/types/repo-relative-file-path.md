@@ -1,8 +1,22 @@
 ---
-doc_version: 1
-created: 2026-05-26T01:40:38+02:00
-updated: 2026-05-26T01:40:38+02:00
+Created: 2026-05-25T23:40:38+00:00
+Updated: 2026-05-26T19:08:34+00:00
+Version: 1
+Author: BionicCode
 ---
+<!-- doc-metadata-presentation:start -->
+<details>
+<summary>Change History</summary>
+
+- Updated: <b>2026-05-26T19:08:34+00:00</b> | Author: <b>BionicCode</b> | Changes: <b>Unavailable</b>
+
+</details>
+
+---
+
+<br>
+<br>
+<!-- doc-metadata-presentation:end -->
 # RepoRelativeFilePath
 
 Repository-relative POSIX file path used by `ManifestEntry.source_path`.
