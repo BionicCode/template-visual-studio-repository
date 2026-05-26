@@ -1,3 +1,22 @@
+---
+Version: 1
+Created: 2026-05-26T19:43:20+00:00
+Updated: 2026-05-26T19:43:20+00:00
+Author: BionicCode
+---
+<!-- doc-metadata-presentation:start -->
+<details>
+<summary>Change History</summary>
+
+- Updated: <b>2026-05-26T19:43:20+00:00</b> | Author: <b>BionicCode</b> | Changes: [<b>View Commit</b>](https://github.com/BionicCode/template-visual-studio-repository/commit/67df5a5ea51072cefc737045c5ca18b33ff6fc4f)
+
+</details>
+
+---
+
+<br>
+<br>
+<!-- doc-metadata-presentation:end -->
 # UniquenessPolicy
 
 Declares whether repository-wide basename uniqueness is enforced for an entry.
