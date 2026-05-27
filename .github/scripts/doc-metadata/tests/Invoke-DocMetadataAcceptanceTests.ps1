@@ -250,6 +250,55 @@ Invoke-Test "Body change without reliable content context does not create a curr
     Assert-Equal 1 ([regex]::Matches($content, "(?m)^- Updated:").Count) "No new history entry should be added without reliable content context."
 }
 
+Invoke-Test "Body change without reliable content context clears stale current View Commit" {
+    $root = New-TestRepository
+    $readme = Join-Path $root "README.md"
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1")
+    Commit-All -Root $root
+    $base = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
+
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -Body "# Title`nContent version with proven link.`n")
+    Commit-All -Root $root -Message "content version two"
+    $bodyCommit = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
+    $linkMap = Write-HistoryLinkMap -Root $root -Links @{
+        "README.md" = @{
+            path = "README.md"
+            url = "https://github.com/example/repo/commit/$bodyCommit"
+            linkText = "View Commit"
+            context = "local:$bodyCommit"
+            commitSha = $bodyCommit
+            bodyChanged = $true
+        }
+    }
+    $linkedUpdate = Invoke-Tool -Root $root -Mode "Update" -ExtraArguments @("-Path", "README.md", "-BaseSha", $base, "-HeadSha", $bodyCommit, "-HistoryLinkMapPath", $linkMap) -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+    Assert-Equal 0 $linkedUpdate.ExitCode "Body update with proven link should pass."
+    $linkedContent = Get-Content -LiteralPath $readme -Raw
+    Assert-True ($linkedContent -match "(?m)^\[<b>View Commit</b>\]\(https://github.com/example/repo/commit/$bodyCommit\)$") "Version 2 should have a proven current View Commit link."
+    Commit-All -Root $root -Message "metadata version two"
+
+    $changedBody = (Get-Content -LiteralPath $readme -Raw).Replace("Content version with proven link.", "Content version without reliable link.")
+    Write-Utf8File -Path $readme -Content $changedBody
+    $invalidLinkMap = Write-HistoryLinkMap -Root $root -Links @{
+        "README.md" = @{
+            path = "docs/other.md"
+            url = "https://github.com/example/repo/commit/$bodyCommit"
+            linkText = "View Commit"
+            context = "local:$bodyCommit"
+            commitSha = $bodyCommit
+            bodyChanged = $true
+        }
+    }
+
+    $result = Invoke-Tool -Root $root -Mode "Update" -ExtraArguments @("-Path", "README.md", "-HistoryLinkMapPath", $invalidLinkMap) -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+
+    Assert-Equal 0 $result.ExitCode "Body change should remain repairable when the next content-change link proof is invalid."
+    $content = Get-Content -LiteralPath $readme -Raw
+    Assert-True ($content -match "Version: 3") "Version should increment for the body change."
+    Assert-True ($content -notmatch "(?m)^\[<b>View Commit</b>\]") "The previous version's current View Commit link must be cleared."
+    Assert-True ($content -match "https://github.com/example/repo/commit/$bodyCommit") "Existing history should still preserve the older proven content-change link."
+    Assert-Equal 2 ([regex]::Matches($content, "(?m)^- Updated:").Count) "No new history entry should be added without reliable content context."
+}
+
 Invoke-Test "Wrong-path and unsafe history link map entries are rejected without guessed fallback" {
     $root = New-TestRepository
     $readme = Join-Path $root "README.md"

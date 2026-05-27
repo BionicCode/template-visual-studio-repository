@@ -2342,18 +2342,31 @@ function New-MarkdownPresentation {
     $limit = if ($null -eq $Config.historyLimit) { $null } else { [int] $Config.historyLimit }
     $sourceMetadataInfo = if ($Values.ContainsKey("__sourcePresentationInfo")) { $Values["__sourcePresentationInfo"] } else { $MetadataInfo }
     $addHistoryEntry = if ($Values.ContainsKey("__addHistoryEntry")) { [bool] $Values["__addHistoryEntry"] } else { $false }
+    $currentChangesLineMode = if ($Values.ContainsKey("__currentChangesLineMode")) { [string] $Values["__currentChangesLineMode"] } else { "preserve" }
     $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
-    $currentChangesLine = Get-CurrentChangesLine -MetadataInfo $sourceMetadataInfo
+    $currentChangesLine = $null
     if ($null -eq $limit -or $limit -gt 0) {
         $updated = $Values[$Config.updatedField]
         $author = $Values[$Config.authorField]
         $historyUrl = if ($Values.ContainsKey("__historyUrl")) { [string] $Values["__historyUrl"] } else { "" }
         $historyLinkText = if ($Values.ContainsKey("__historyLinkText")) { [string] $Values["__historyLinkText"] } else { "View Commit" }
-        if ($addHistoryEntry) {
-            if (-not [string]::IsNullOrWhiteSpace($historyUrl)) {
-                $currentChangesLine = "[<b>$historyLinkText</b>]($historyUrl)"
+        switch ($currentChangesLineMode) {
+            "preserve" {
+                $currentChangesLine = Get-CurrentChangesLine -MetadataInfo $sourceMetadataInfo
             }
-
+            "replace" {
+                if (-not [string]::IsNullOrWhiteSpace($historyUrl) -and $historyLinkText -eq "View Commit") {
+                    $currentChangesLine = "[<b>$historyLinkText</b>]($historyUrl)"
+                }
+            }
+            "clear" {
+                $currentChangesLine = $null
+            }
+            default {
+                $currentChangesLine = Get-CurrentChangesLine -MetadataInfo $sourceMetadataInfo
+            }
+        }
+        if ($addHistoryEntry) {
             $newEntry = if ([string]::IsNullOrWhiteSpace($historyUrl)) {
                 "- Updated: <b>$updated</b> | Author: <b>$author</b> | Changes: <b>Unavailable</b>"
             }
@@ -3008,6 +3021,7 @@ function Initialize-OrUpdateFile {
         $linkInfo = Get-HistoryLinkInfo -RepoPath $repoPath -Comparison $Comparison -Config $config
         $hasNewContentReference = $null -eq $previousContent -and $null -ne $Comparison -and $Comparison.staleCheckAvailable -and $linkInfo.HasReliableContext
         $addHistoryEntry = ($bodyChanged -or $hasNewContentReference) -and $linkInfo.HasReliableContext
+        $currentChangesLineMode = if ($addHistoryEntry) { "replace" } else { "clear" }
 
         $values = @{
             $config.versionField = $initialVersion
@@ -3017,6 +3031,7 @@ function Initialize-OrUpdateFile {
             "__historyUrl" = $linkInfo.Url
             "__historyLinkText" = $linkInfo.LinkText
             "__addHistoryEntry" = $addHistoryEntry
+            "__currentChangesLineMode" = $currentChangesLineMode
         }
         $newContent = Set-MetadataContent -Content $textFile.Content -Config $config -Values $values -NewLine $textFile.NewLine
         if ($PSCmdlet.ShouldProcess($repoPath, "Initialize document metadata")) {
@@ -3158,6 +3173,12 @@ function Initialize-OrUpdateFile {
             $newUpdated = ConvertTo-UtcTimestampValue $newUpdated
         }
         $linkInfo = Get-HistoryLinkInfo -RepoPath $repoPath -Comparison $Comparison -Config $config
+        $currentChangesLineMode = if ($bodyChanged) {
+            if ($linkInfo.HasReliableContext) { "replace" } else { "clear" }
+        }
+        else {
+            "preserve"
+        }
         $values = @{
             $config.versionField = $newVersion
             $config.createdField = $newCreated
@@ -3167,6 +3188,7 @@ function Initialize-OrUpdateFile {
             "__historyLinkText" = $linkInfo.LinkText
             "__sourcePresentationInfo" = if ($hasPresentationDriftFromPrevious -or $canRestoreMissingPresentation) { $previousInfo } else { $currentInfo }
             "__addHistoryEntry" = ($bodyChanged -and $linkInfo.HasReliableContext)
+            "__currentChangesLineMode" = $currentChangesLineMode
         }
         $newContent = Set-MetadataContent -Content $textFile.Content -Config $config -Values $values -NewLine $textFile.NewLine
         if ($PSCmdlet.ShouldProcess($repoPath, "Update document metadata")) {

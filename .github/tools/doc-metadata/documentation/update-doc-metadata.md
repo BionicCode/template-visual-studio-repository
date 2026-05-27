@@ -1,7 +1,7 @@
 ---
-Version: 6
+Version: 7
 Created: 2026-05-26T19:08:33+00:00
-Updated: 2026-05-27T18:19:09+00:00
+Updated: 2026-05-27T18:47:34+00:00
 Author: BionicCode
 ---
 <!-- doc-metadata-presentation:start -->
@@ -120,7 +120,7 @@ All governed eligible files must keep metadata. Repair may update files beyond t
 
 Document history tracks document content versions, not metadata maintenance. Tool-only metadata initialization, formatting repair, timestamp repair, URL repair, and safe tamper restoration are reported in console output, JSON reports, GitHub summaries, and repair PR bodies. They are not embedded as Change History entries.
 
-Metadata-only repair preserves the previous proven current-version link. It does not re-fetch, replace, remove, or rewrite that link unless the managed presentation must be restored from trusted previous generated content. Unproven links are not adopted as trusted generated history.
+Metadata-only repair preserves the previous proven current-version link. It does not re-fetch, replace, remove, or rewrite that link unless the managed presentation must be restored from trusted previous generated content. A body change with a proven replacement link updates the current-version link; a body change without reliable content-change context clears that top link rather than preserving an older version's link. Unproven links are not adopted as trusted generated history.
 
 Manual `Version` increases are allowed as a rebaseline when the body is unchanged and the rest of the managed metadata is valid. Version decreases are rejected by default.
 
@@ -156,7 +156,7 @@ Merge commits with multiple parents are ambiguous for this purpose and are skipp
 
 The script performs lexical URL validation before emitting or preserving managed history links. It rejects unsafe schemes such as `javascript:`, `data:`, and `file:`, relative or malformed URLs, unrelated repositories or hosts, `github.io`, generic repository home URLs, normal `/blob/<ref>/<path>` file-at-version URLs, `/tree/` URLs, `/compare/` URLs, and link-map entries whose declared path does not match the governed file. If repository identity cannot be resolved, managed history URLs are rejected instead of accepted generically. The script remains network-free; workflow steps are responsible for any live URL resolution before passing links to the script.
 
-History entries and the current-version link must reference the document content change, not the metadata repair commit unless that same commit also changed document body content. `View Changes` is reserved for future verified file-specific changes support and is rejected in managed presentation for this v1 pass. Proven commit URL fallbacks are labeled `View Commit`; a commit URL labeled `View Changes` fails validation. If no reliable content-change context exists, the tool repairs metadata without adding a new Change History entry or replacing the current-version link.
+History entries and the current-version link must reference the document content change, not the metadata repair commit unless that same commit also changed document body content. `View Changes` is reserved for future verified file-specific changes support and is rejected in managed presentation for this v1 pass. Proven commit URL fallbacks are labeled `View Commit`; a commit URL labeled `View Changes` fails validation. If no reliable content-change context exists, the tool repairs metadata without adding a new Change History entry. Metadata-only repair preserves the existing proven current-version link, while body-changing repair clears that link so it cannot point at an older document version.
 
 The repair link map is proof-bearing data. A commit fallback entry must include the governed `path`, `url`, matching `commitSha`, and `bodyChanged: true`; the metadata script independently verifies that the commit changed the file's managed body before emitting the link.
 
