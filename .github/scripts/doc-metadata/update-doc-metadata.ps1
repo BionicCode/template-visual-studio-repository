@@ -2366,13 +2366,8 @@ function New-MarkdownPresentation {
                 $currentChangesLine = Get-CurrentChangesLine -MetadataInfo $sourceMetadataInfo
             }
         }
-        if ($addHistoryEntry) {
-            $newEntry = if ([string]::IsNullOrWhiteSpace($historyUrl)) {
-                "- Updated: <b>$updated</b> | Author: <b>$author</b> | Changes: <b>Unavailable</b>"
-            }
-            else {
-                "- Updated: <b>$updated</b> | Author: <b>$author</b> | Changes: [<b>$historyLinkText</b>]($historyUrl)"
-            }
+        if ($addHistoryEntry -and -not [string]::IsNullOrWhiteSpace($historyUrl) -and $historyLinkText -eq "View Commit") {
+            $newEntry = "- Updated: <b>$updated</b> | Author: <b>$author</b> | Changes: [<b>$historyLinkText</b>]($historyUrl)"
 
             [void] $seen.Add($newEntry)
             $historyLines.Add($newEntry)

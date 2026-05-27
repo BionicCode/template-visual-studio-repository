@@ -1,7 +1,7 @@
 ---
-Version: 7
+Version: 8
 Created: 2026-05-26T19:08:33+00:00
-Updated: 2026-05-27T18:47:34+00:00
+Updated: 2026-05-27T20:10:00+00:00
 Author: BionicCode
 ---
 <!-- doc-metadata-presentation:start -->
@@ -148,7 +148,8 @@ New history entries use the most precise stable link available:
 
 1. Verified file-specific changes URL for the document path and content-change context. This is future support and is not emitted in v1.
 2. Stable, proven content-change commit URL with link text `View Commit`.
-3. `Changes: <b>Unavailable</b>` when no reliable commit URL exists.
+
+If no reliable content-change context exists, the tool does not add a current-version link and does not add a new Change History entry.
 
 The workflow distinguishes the content-change commit from a later bot repair commit. For each repaired file, the trusted resolver script asks `update-doc-metadata.ps1 -Mode ContentChanges` to compare the managed body at each candidate commit. The newest commit that actually changed that file's body becomes the history context. The workflow does not assign `github.sha` or the PR head commit to every file.
 

@@ -159,11 +159,13 @@ function Get-MarkdownWithMetadata {
         [string] $Author = "Doc Metadata Tests",
         [string] $Body = "# Title`n",
         [string] $CurrentChangesUrl = "",
-        [string] $CurrentChangesLinkText = "View Commit"
+        [string] $CurrentChangesLinkText = "View Commit",
+        [string[]] $HistoryLines = @()
     )
 
     $currentLink = if ([string]::IsNullOrWhiteSpace($CurrentChangesUrl)) { "" } else { "[<b>$CurrentChangesLinkText</b>]($CurrentChangesUrl)`n`n" }
-    "---`nVersion: $Version`nCreated: $Created`nUpdated: $Updated`nAuthor: $Author`n---`n<!-- doc-metadata-presentation:start -->`n$currentLink<details>`n<summary>Change History</summary>`n`n- Updated: <b>$Updated</b> | Author: <b>$Author</b> | Changes: <b>Unavailable</b>`n`n</details>`n`n---`n`n<br>`n<br>`n<!-- doc-metadata-presentation:end -->`n`n$Body"
+    $historyBlock = if ($HistoryLines.Count -gt 0) { ($HistoryLines -join "`n") + "`n`n" } else { "" }
+    "---`nVersion: $Version`nCreated: $Created`nUpdated: $Updated`nAuthor: $Author`n---`n<!-- doc-metadata-presentation:start -->`n$currentLink<details>`n<summary>Change History</summary>`n`n$historyBlock</details>`n`n---`n`n<br>`n<br>`n<!-- doc-metadata-presentation:end -->`n`n$Body"
 }
 
 Invoke-Test "Bootstrap initializes Markdown with human metadata, Author, UTC, and rich presentation" {
@@ -181,6 +183,8 @@ Invoke-Test "Bootstrap initializes Markdown with human metadata, Author, UTC, an
     Assert-Equal 2 ([regex]::Matches($content, "(?m)^<br>$").Count) "Markdown spacingBreaks 2 should emit exactly two <br> lines."
     Assert-True ($content -match "<!-- doc-metadata-presentation:end -->\r?\n\r?\n# Title") "Generated Markdown should leave a blank physical line before the document heading."
     Assert-Equal 0 ([regex]::Matches($content, "(?m)^- Updated:").Count) "Metadata-only Bootstrap should not create content Change History entries."
+    Assert-True ($content -notmatch "Changes: <b>Unavailable</b>") "Metadata-only Bootstrap must not generate deprecated Unavailable history entries."
+    Assert-True ($content -notmatch "\[<b>View (?:Changes|Commit)</b>\]") "Metadata-only Bootstrap must not create a current-version link without reliable content context."
     $report = Read-JsonFile (Join-Path $root "report.json")
     Assert-Equal $null $report.updatedFiles[0].oldVersion "Initialized old version should be null."
     Assert-Equal "1" ([string] $report.updatedFiles[0].newVersion) "Initialized new version should be 1."
@@ -228,7 +232,7 @@ Invoke-Test "Body change after dotted version increments first component and ref
     Assert-True ($content -match "Version: 3") "Automatic increment should collapse 2.1.2 to 3."
     Assert-True ($content -match "Author: Content Author") "Author should refresh on body change."
     Assert-True ($content -match "\[<b>View Commit</b>\]\(https://github.com/example/repo/commit/$bodyCommit\)") "Current View Commit should point at the proven content-change commit URL."
-    Assert-Equal 2 ([regex]::Matches($content, "(?m)^- Updated:").Count) "Body change should add exactly one newest history entry."
+    Assert-Equal 1 ([regex]::Matches($content, "(?m)^- Updated:").Count) "Body change should add exactly one newest history entry."
     $report = Read-JsonFile (Join-Path $root "report.json")
     Assert-Equal "2.1.2" ([string] $report.updatedFiles[0].oldVersion) "Report should include old dotted version."
     Assert-Equal "3" ([string] $report.updatedFiles[0].newVersion) "Report should include new major version."
@@ -247,7 +251,8 @@ Invoke-Test "Body change without reliable content context does not create a curr
     $content = Get-Content -LiteralPath $readme -Raw
     Assert-True ($content -match "Version: 2") "Version should increment on body change."
     Assert-True ($content -notmatch "\[<b>View (?:Changes|Commit)</b>\]") "No current managed link should be generated without reliable content context."
-    Assert-Equal 1 ([regex]::Matches($content, "(?m)^- Updated:").Count) "No new history entry should be added without reliable content context."
+    Assert-Equal 0 ([regex]::Matches($content, "(?m)^- Updated:").Count) "No new history entry should be added without reliable content context."
+    Assert-True ($content -notmatch "Changes: <b>Unavailable</b>") "Body changes without reliable content context must not generate Unavailable history entries."
 }
 
 Invoke-Test "Body change without reliable content context clears stale current View Commit" {
@@ -296,7 +301,8 @@ Invoke-Test "Body change without reliable content context clears stale current V
     Assert-True ($content -match "Version: 3") "Version should increment for the body change."
     Assert-True ($content -notmatch "(?m)^\[<b>View Commit</b>\]") "The previous version's current View Commit link must be cleared."
     Assert-True ($content -match "https://github.com/example/repo/commit/$bodyCommit") "Existing history should still preserve the older proven content-change link."
-    Assert-Equal 2 ([regex]::Matches($content, "(?m)^- Updated:").Count) "No new history entry should be added without reliable content context."
+    Assert-Equal 1 ([regex]::Matches($content, "(?m)^- Updated:").Count) "No new history entry should be added without reliable content context."
+    Assert-True ($content -notmatch "Changes: <b>Unavailable</b>") "Invalid replacement proof must not fall back to Unavailable history entries."
 }
 
 Invoke-Test "Wrong-path and unsafe history link map entries are rejected without guessed fallback" {
@@ -455,7 +461,7 @@ Invoke-Test "Managed presentation URL validation rejects unrelated and generic r
     Assert-True ($compareResult.ExitCode -ne 0) "Current View Changes compare URLs should fail until verified file-specific changes support exists."
     Assert-True ($compareResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
 
-    $historyCompare = (Get-MarkdownWithMetadata -Version "1").Replace("Changes: <b>Unavailable</b>", "Changes: [<b>View Changes</b>](https://github.com/example/repo/compare/1111111111111111111111111111111111111111...2222222222222222222222222222222222222222)")
+    $historyCompare = Get-MarkdownWithMetadata -Version "1" -HistoryLines @("- Updated: <b>2026-01-01T00:00:00+00:00</b> | Author: <b>Doc Metadata Tests</b> | Changes: [<b>View Changes</b>](https://github.com/example/repo/compare/1111111111111111111111111111111111111111...2222222222222222222222222222222222222222)")
     Write-Utf8File -Path $readme -Content $historyCompare
     $historyCompareResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md") -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
 
@@ -508,7 +514,7 @@ Invoke-Test "Managed presentation links require View Commit and body-change proo
     Assert-True ($unprovenCommitResult.ExitCode -ne 0) "Same-repo commit URLs should fail when the commit did not change the governed file body."
     Assert-True ($unprovenCommitResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
 
-    $historyViewChanges = (Get-MarkdownWithMetadata -Version "2" -Updated "2026-01-02T00:00:00+00:00" -Body "# Title`nBody changed for link proof.`n").Replace("Changes: <b>Unavailable</b>", "Changes: [<b>View Changes</b>](https://github.com/example/repo/commit/$bodyCommit)")
+    $historyViewChanges = Get-MarkdownWithMetadata -Version "2" -Updated "2026-01-02T00:00:00+00:00" -Body "# Title`nBody changed for link proof.`n" -HistoryLines @("- Updated: <b>2026-01-02T00:00:00+00:00</b> | Author: <b>Doc Metadata Tests</b> | Changes: [<b>View Changes</b>](https://github.com/example/repo/commit/$bodyCommit)")
     Write-Utf8File -Path $readme -Content $historyViewChanges
     $historyResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md", "-BaseSha", $base, "-HeadSha", $bodyCommit) -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
 
@@ -671,6 +677,7 @@ Invoke-Test "Existing file onboarding does not create content history for metada
     $content = Get-Content -LiteralPath $readme -Raw
     Assert-True ($content -match "Version: 1") "Existing file should be initialized at Version 1."
     Assert-Equal 0 ([regex]::Matches($content, "(?m)^- Updated:").Count) "Existing metadata-only onboarding should not create a content history entry."
+    Assert-True ($content -notmatch "Changes: <b>Unavailable</b>") "Existing metadata-only onboarding must not generate Unavailable history entries."
     Assert-True ($content -match "<!-- doc-metadata-presentation:end -->\r?\n\r?\n# Title") "Onboarding should preserve a clean Markdown body boundary."
 }
 
@@ -731,7 +738,8 @@ Invoke-Test "Metadata-only presentation repair preserves metadata and current Vi
     Assert-True ($after -match "Version: 2") "Metadata-only repair must not change Version."
     Assert-True ($after -match "Author: Doc Metadata Tests") "Metadata-only repair must not change Author."
     Assert-True ($after -match "\[<b>View Commit</b>\]\(https://github.com/example/repo/commit/$bodyCommit\)") "Metadata-only repair should preserve the current proven View Commit link."
-    Assert-Equal 2 ([regex]::Matches($after, "(?m)^- Updated:").Count) "Metadata-only repair must not add a history entry."
+    Assert-Equal 1 ([regex]::Matches($after, "(?m)^- Updated:").Count) "Metadata-only repair must not add a history entry."
+    Assert-True ($after -notmatch "Changes: <b>Unavailable</b>") "Metadata-only repair must not generate Unavailable history entries."
     Assert-True ($after -match "<!-- doc-metadata-presentation:end -->\r?\n\r?\n# Title") "Presentation repair should restore the managed trailing blank line."
 }
 
@@ -753,15 +761,36 @@ Invoke-Test "Generated history tamper is restored from trusted previous presenta
     $readme = Join-Path $root "README.md"
     Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1")
     Commit-All -Root $root
-    $tampered = (Get-Content -LiteralPath $readme -Raw).Replace("Changes: <b>Unavailable</b>", "Changes: [<b>View Commit</b>](https://github.com/example/example)")
+    $base = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
+
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -Body "# Title`nContent version with proven history.`n")
+    Commit-All -Root $root -Message "content version with history"
+    $bodyCommit = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
+    $linkMap = Write-HistoryLinkMap -Root $root -Links @{
+        "README.md" = @{
+            path = "README.md"
+            url = "https://github.com/example/repo/commit/$bodyCommit"
+            linkText = "View Commit"
+            context = "local:$bodyCommit"
+            commitSha = $bodyCommit
+            bodyChanged = $true
+        }
+    }
+    $contentUpdate = Invoke-Tool -Root $root -Mode "Update" -ExtraArguments @("-Path", "README.md", "-BaseSha", $base, "-HeadSha", $bodyCommit, "-HistoryLinkMapPath", $linkMap) -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+    Assert-Equal 0 $contentUpdate.ExitCode "Body update with proven link should pass before tamper."
+    Commit-All -Root $root -Message "metadata with proven history"
+
+    $tampered = (Get-Content -LiteralPath $readme -Raw).Replace("https://github.com/example/repo/commit/$bodyCommit", "https://github.com/example/example")
     Write-Utf8File -Path $readme -Content $tampered
 
-    $result = Invoke-Tool -Root $root -Mode "Update" -ExtraArguments @("-Path", "README.md", "-ReportOutputPath", "report.json")
+    $result = Invoke-Tool -Root $root -Mode "Update" -ExtraArguments @("-Path", "README.md", "-ReportOutputPath", "report.json") -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
 
     Assert-Equal 0 $result.ExitCode "Safe history tamper restore should pass."
     $content = Get-Content -LiteralPath $readme -Raw
-    Assert-True ($content -match "Changes: <b>Unavailable</b>") "Generated history should be restored from previous trusted presentation."
+    Assert-True ($content -match "Changes: \[<b>View Commit</b>\]\(https://github.com/example/repo/commit/$bodyCommit\)") "Generated history should restore the previous proven View Commit entry."
+    Assert-True ($content -notmatch "Changes: <b>Unavailable</b>") "History tamper restoration must not restore deprecated Unavailable history entries."
     Assert-True ($content -notmatch "github.com/example/example") "Tampered URL should be removed."
+    Assert-Equal 1 ([regex]::Matches($content, "(?m)^- Updated:").Count) "Metadata-only tamper restoration must not add a new history entry."
     $report = Read-JsonFile (Join-Path $root "report.json")
     Assert-True ($report.updatedFiles[0].reason -match "historyTamperDetected" -and $report.updatedFiles[0].reason -match "historyRestoredFromTrustedPrevious") "Report should include history tamper categories."
 }
