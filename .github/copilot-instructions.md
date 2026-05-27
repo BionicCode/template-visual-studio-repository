@@ -1,14 +1,13 @@
 ---
+Version: 1
 Created: 2026-05-25T23:40:37+00:00
 Updated: 2026-05-26T19:08:32+00:00
-Version: 1
 Author: BionicCode
 ---
 <!-- doc-metadata-presentation:start -->
 <details>
 <summary>Change History</summary>
 
-- Updated: <b>2026-05-26T19:08:32+00:00</b> | Author: <b>BionicCode</b> | Changes: <b>Unavailable</b>
 
 </details>
 
@@ -17,6 +16,7 @@ Author: BionicCode
 <br>
 <br>
 <!-- doc-metadata-presentation:end -->
+
 # copilot-instructions.md (Version 3.1)
 
 Follow the repository-wide engineering and validation standards defined in the root [AGENTS.md](../AGENTS.md) and any more specific AGENTS.md files that apply to the current path. The current file is based on that AGENTS.md at repository root and may get outdated. Any AGENTS.md along the working path is the source of truth. If a referenced AGENTS.md file cannot be located or read, state that it was not found and fall back to the rules in this file. Do not infer or assume its contents.

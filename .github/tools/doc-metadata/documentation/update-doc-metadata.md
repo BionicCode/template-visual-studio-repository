@@ -1,14 +1,13 @@
 ---
-Version: 1
+Version: 5
 Created: 2026-05-26T19:08:33+00:00
-Updated: 2026-05-26T19:08:33+00:00
+Updated: 2026-05-27T17:51:17+00:00
 Author: BionicCode
 ---
 <!-- doc-metadata-presentation:start -->
 <details>
 <summary>Change History</summary>
 
-- Updated: <b>2026-05-26T19:08:33+00:00</b> | Author: <b>BionicCode</b> | Changes: <b>Unavailable</b>
 
 </details>
 
@@ -17,13 +16,14 @@ Author: BionicCode
 <br>
 <br>
 <!-- doc-metadata-presentation:end -->
+
 # Document Metadata Automation
 
 ## What this tool does
 
 The document metadata tool keeps human-readable metadata headers current for governed UTF-8 document files. It writes managed fields such as `Version`, `Created`, `Updated`, and `Author`, adds a generated presentation area for Markdown files, and verifies that document revisions match body-content changes.
 
-The repository manifest is the source of truth. GitHub workflow path filters only decide when CI starts; they do not decide which files are governed.
+The repository manifest is the source of truth. The hosted workflow intentionally does not duplicate manifest include patterns in `paths` filters because GitHub evaluates those filters before the workflow starts. If trigger filters are narrower than the manifest, governed files such as `AGENTS.md`, `DOCUMENTATION.md`, or nested tooling docs can be missed before the tool has a chance to analyze them.
 
 > [!IMPORTANT]
 > First-time setup usually requires one Bootstrap or Repair run to initialize existing governed files. For migrated existing files, `Created` means metadata initialization time unless a future Git-history inference feature is added.
@@ -41,6 +41,8 @@ Author: BionicCode
 ---
 
 <!-- doc-metadata-presentation:start -->
+[<b>View Commit</b>](https://github.com/owner/repo/commit/0123456789abcdef0123456789abcdef01234567)
+
 <details>
 <summary>Change History</summary>
 
@@ -86,15 +88,21 @@ Markdown `spacingBreaks` creates explicit `<br>` lines. Plain text `spacingBreak
 
 Change History is a generated recent-history view. Git remains the canonical full audit log.
 
+The current-version `View Changes` link and the collapsed Change History are generated metadata presentation. They are visually separated from the document body and excluded from body comparison.
+
 ## Common Workflows
 
 Same-repository pull request: Analyze runs read-only. If repair is safe, Repair pushes one metadata commit to the PR branch, then runs Check again because `GITHUB_TOKEN` commits may not trigger all follow-up workflows.
+
+For pull requests, content history is based on the PR base/head comparison. The repair commit is treated as metadata maintenance unless it also contains the document body change.
 
 Fork pull request: Analyze reports only. The workflow does not run write-capable repair for forks.
 
 Direct push to default branch: Analyze classifies metadata state. Safe repair creates or updates a deterministic bot branch and repair PR instead of pushing to main.
 
-`workflow_dispatch`: Runs the same Analyze/Repair/Final Status flow for the selected branch.
+For push events, content history is based on the pushed `before..after` range. A later metadata repair commit is not used as the content-change reference.
+
+`workflow_dispatch`: Runs the same Analyze/Repair/Final Status flow for the selected branch. If no explicit or safely derived comparison context exists, the tool can repair metadata but does not create a new content Change History entry.
 
 Local Bootstrap/Update: Developers can still run the script manually, but normal maintenance should be handled by hosted repair automation.
 
@@ -106,7 +114,13 @@ pwsh ./.github/scripts/doc-metadata/update-doc-metadata.ps1 -Mode Check -Root .
 
 ## Repair Safety
 
-The tool compares body content after removing the metadata block and the entire generated presentation/separator region. Generated history or spacing updates cannot trigger a self-perpetuating version bump.
+The tool compares body content after removing the metadata block and the entire generated presentation/separator region. Generated history, `View Changes` links, separators, and spacing updates cannot trigger a self-perpetuating version bump.
+
+All governed eligible files must keep metadata. Repair may update files beyond the one that triggered a workflow if other governed files have repairable metadata defects, such as missing headers or malformed presentation boundaries. The tool does not intentionally remove generated metadata from governed eligible files.
+
+Document history tracks document content versions, not metadata maintenance. Tool-only metadata initialization, formatting repair, timestamp repair, URL repair, and safe tamper restoration are reported in console output, JSON reports, GitHub summaries, and repair PR bodies. They are not embedded as Change History entries.
+
+Metadata-only repair preserves the previous current-version `View Changes` link. It does not re-fetch, replace, remove, or rewrite that link unless the managed presentation must be restored from trusted previous generated content.
 
 Manual `Version` increases are allowed as a rebaseline when the body is unchanged and the rest of the managed metadata is valid. Version decreases are rejected by default.
 
@@ -132,11 +146,27 @@ Generated history entries are tamper-safe. If a generated history entry changes,
 
 New history entries use the most precise stable link available:
 
-1. Verified file-specific diff URL.
-2. Stable commit URL with link text `View Commit`.
+1. Verified file-specific changes URL for the document path and content-change context.
+2. Stable content-change commit URL with link text `View Commit`.
 3. `Changes: <b>Unavailable</b>` when no reliable commit URL exists.
 
+The workflow distinguishes the content-change commit from a later bot repair commit. For each repaired file, the trusted resolver script asks `update-doc-metadata.ps1 -Mode ContentChanges` to compare the managed body at each candidate commit. The newest commit that actually changed that file's body becomes the history context. The workflow does not assign `github.sha` or the PR head commit to every file.
+
+Merge commits with multiple parents are ambiguous for this purpose and are skipped rather than guessed. Root commits are treated as newly introduced content only when the governed file exists in the commit and was absent before.
+
+The script performs lexical URL validation before emitting or preserving managed history links. It rejects unsafe schemes such as `javascript:`, `data:`, and `file:`, relative or malformed URLs, unrelated repositories or hosts, `github.io`, generic repository home URLs, normal `/blob/<ref>/<path>` file-at-version URLs, `/tree/` URLs, and link-map entries whose declared path does not match the governed file. If repository identity cannot be resolved, managed history URLs are rejected instead of accepted generically. The script remains network-free; workflow steps are responsible for any live URL resolution before passing links to the script.
+
+History entries and the current-version link must reference the document content change, not the metadata repair commit unless that same commit also changed document body content. `View Changes` is reserved for a verified file-specific changes view. Proven commit URL fallbacks are labeled `View Commit`. If no reliable content-change context exists, the tool repairs metadata without adding a new Change History entry or replacing the current-version link.
+
+The repair link map is proof-bearing data. A commit fallback entry must include the governed `path`, `url`, matching `commitSha`, and `bodyChanged: true`; the metadata script independently verifies that the commit changed the file's managed body before emitting the link.
+
 Existing committed history URLs are not re-fetched every run. Integrity is checked by comparing the current generated history with the previous trusted generated history.
+
+## Final Status
+
+The workflow has Analyze, Repair, post-repair Check, and Final Status stages. A successful repair followed by a passing post-repair Check should produce a passing final status.
+
+If final status fails after a repair, it lists the repaired files, remaining invalid files, and remaining unrecoverable files from the post-repair Check report. The repair may have succeeded for one file while other governed files still have unrepaired or unrecoverable metadata failures.
 
 ## Troubleshooting
 

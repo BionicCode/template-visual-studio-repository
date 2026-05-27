@@ -122,9 +122,33 @@ function Invoke-Tool {
     Invoke-Process -FileName "pwsh" -Arguments $arguments -WorkingDirectory $Root -Environment $Environment
 }
 
+function Invoke-Resolver {
+    param(
+        [string] $Root,
+        [string[]] $ExtraArguments = @(),
+        [hashtable] $Environment = @{}
+    )
+
+    $scriptPath = Join-Path $Root ".github\scripts\doc-metadata\resolve-content-change-links.ps1"
+    $metadataScriptPath = Join-Path $Root ".github\scripts\doc-metadata\update-doc-metadata.ps1"
+    $arguments = @("-NoLogo", "-NoProfile", "-File", $scriptPath, "-Root", $Root, "-MetadataScriptPath", $metadataScriptPath) + $ExtraArguments
+    Invoke-Process -FileName "pwsh" -Arguments $arguments -WorkingDirectory $Root -Environment $Environment
+}
+
 function Read-JsonFile {
     param([string] $Path)
     Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -Depth 32
+}
+
+function Write-HistoryLinkMap {
+    param(
+        [string] $Root,
+        [hashtable] $Links
+    )
+
+    $mapPath = Join-Path $Root "links.json"
+    $Links | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $mapPath -Encoding utf8NoBOM
+    $mapPath
 }
 
 function Get-MarkdownWithMetadata {
@@ -133,10 +157,12 @@ function Get-MarkdownWithMetadata {
         [string] $Created = "2026-01-01T00:00:00+00:00",
         [string] $Updated = "2026-01-01T00:00:00+00:00",
         [string] $Author = "Doc Metadata Tests",
-        [string] $Body = "# Title`n"
+        [string] $Body = "# Title`n",
+        [string] $CurrentChangesUrl = ""
     )
 
-    "---`nVersion: $Version`nCreated: $Created`nUpdated: $Updated`nAuthor: $Author`n---`n<!-- doc-metadata-presentation:start -->`n<details>`n<summary>Change History</summary>`n`n- Updated: <b>$Updated</b> | Author: <b>$Author</b> | Changes: <b>Unavailable</b>`n`n</details>`n`n---`n`n<br>`n<br>`n<!-- doc-metadata-presentation:end -->`n$Body"
+    $currentLink = if ([string]::IsNullOrWhiteSpace($CurrentChangesUrl)) { "" } else { "[<b>View Changes</b>]($CurrentChangesUrl)`n`n" }
+    "---`nVersion: $Version`nCreated: $Created`nUpdated: $Updated`nAuthor: $Author`n---`n<!-- doc-metadata-presentation:start -->`n$currentLink<details>`n<summary>Change History</summary>`n`n- Updated: <b>$Updated</b> | Author: <b>$Author</b> | Changes: <b>Unavailable</b>`n`n</details>`n`n---`n`n<br>`n<br>`n<!-- doc-metadata-presentation:end -->`n`n$Body"
 }
 
 Invoke-Test "Bootstrap initializes Markdown with human metadata, Author, UTC, and rich presentation" {
@@ -152,6 +178,8 @@ Invoke-Test "Bootstrap initializes Markdown with human metadata, Author, UTC, an
     Assert-True ($content -match "Created: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00") "Created should be UTC +00:00."
     Assert-True ($content -match "<!-- doc-metadata-presentation:start -->") "Markdown presentation region should be generated."
     Assert-Equal 2 ([regex]::Matches($content, "(?m)^<br>$").Count) "Markdown spacingBreaks 2 should emit exactly two <br> lines."
+    Assert-True ($content -match "<!-- doc-metadata-presentation:end -->\r?\n\r?\n# Title") "Generated Markdown should leave a blank physical line before the document heading."
+    Assert-Equal 0 ([regex]::Matches($content, "(?m)^- Updated:").Count) "Metadata-only Bootstrap should not create content Change History entries."
     $report = Read-JsonFile (Join-Path $root "report.json")
     Assert-Equal $null $report.updatedFiles[0].oldVersion "Initialized old version should be null."
     Assert-Equal "1" ([string] $report.updatedFiles[0].newVersion) "Initialized new version should be 1."
@@ -176,18 +204,317 @@ Invoke-Test "Body change after dotted version increments first component and ref
     $readme = Join-Path $root "README.md"
     Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "2.1.2")
     Commit-All -Root $root
+    $base = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
     Invoke-Git -Root $root -Arguments @("config", "user.name", "Content Author") | Out-Null
     Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "2.1.2" -Body "# Title`nChanged.`n")
+    Commit-All -Root $root -Message "content change"
+    $bodyCommit = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
+    $linkMap = Write-HistoryLinkMap -Root $root -Links @{
+        "README.md" = @{
+            path = "README.md"
+            url = "https://github.com/example/repo/commit/$bodyCommit"
+            linkText = "View Commit"
+            context = "local:$bodyCommit"
+            commitSha = $bodyCommit
+            bodyChanged = $true
+        }
+    }
 
-    $result = Invoke-Tool -Root $root -Mode "Update" -ExtraArguments @("-Path", "README.md", "-ReportOutputPath", "report.json")
+    $result = Invoke-Tool -Root $root -Mode "Update" -ExtraArguments @("-Path", "README.md", "-BaseSha", $base, "-HeadSha", $bodyCommit, "-HistoryLinkMapPath", $linkMap, "-ReportOutputPath", "report.json") -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
 
     Assert-Equal 0 $result.ExitCode "Update should pass."
     $content = Get-Content -LiteralPath $readme -Raw
     Assert-True ($content -match "Version: 3") "Automatic increment should collapse 2.1.2 to 3."
     Assert-True ($content -match "Author: Content Author") "Author should refresh on body change."
+    Assert-True ($content -match "\[<b>View Commit</b>\]\(https://github.com/example/repo/commit/$bodyCommit\)") "Current View Commit should point at the proven content-change commit URL."
+    Assert-Equal 2 ([regex]::Matches($content, "(?m)^- Updated:").Count) "Body change should add exactly one newest history entry."
     $report = Read-JsonFile (Join-Path $root "report.json")
     Assert-Equal "2.1.2" ([string] $report.updatedFiles[0].oldVersion) "Report should include old dotted version."
     Assert-Equal "3" ([string] $report.updatedFiles[0].newVersion) "Report should include new major version."
+}
+
+Invoke-Test "Body change without reliable content context does not create View Changes or history" {
+    $root = New-TestRepository
+    $readme = Join-Path $root "README.md"
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1")
+    Commit-All -Root $root
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -Body "# Title`nChanged without link context.`n")
+
+    $result = Invoke-Tool -Root $root -Mode "Update" -ExtraArguments @("-Path", "README.md")
+
+    Assert-Equal 0 $result.ExitCode "Body change should still be repairable without a reliable link context."
+    $content = Get-Content -LiteralPath $readme -Raw
+    Assert-True ($content -match "Version: 2") "Version should increment on body change."
+    Assert-True ($content -notmatch "\[<b>View Changes</b>\]") "No current View Changes link should be generated without reliable content context."
+    Assert-Equal 1 ([regex]::Matches($content, "(?m)^- Updated:").Count) "No new history entry should be added without reliable content context."
+}
+
+Invoke-Test "Wrong-path and unsafe history link map entries are rejected without guessed fallback" {
+    $root = New-TestRepository
+    $readme = Join-Path $root "README.md"
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1")
+    Commit-All -Root $root
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -Body "# Title`nChanged.`n")
+    $wrongPathMap = Write-HistoryLinkMap -Root $root -Links @{
+        "README.md" = @{
+            path = "docs/other.md"
+            url = "https://github.com/example/repo/commit/3333333333333333333333333333333333333333"
+            linkText = "View Commit"
+        }
+    }
+
+    $result = Invoke-Tool -Root $root -Mode "Update" -ExtraArguments @("-Path", "README.md", "-HistoryLinkMapPath", $wrongPathMap) -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+
+    Assert-Equal 0 $result.ExitCode "Wrong-path map should not make the body repair fail."
+    $content = Get-Content -LiteralPath $readme -Raw
+    Assert-True ($content -match "Version: 2") "Version should still increment."
+    Assert-True ($content -notmatch "3333333333333333333333333333333333333333") "Wrong-path URL must not be emitted."
+
+    Commit-All -Root $root
+    Write-Utf8File -Path $readme -Content ((Get-Content -LiteralPath $readme -Raw) -replace "Changed\.", "Changed again.")
+    $unsafeMap = Write-HistoryLinkMap -Root $root -Links @{
+        "README.md" = @{
+            path = "README.md"
+            url = "javascript:alert(1)"
+            linkText = "View Commit"
+        }
+    }
+
+    $unsafeResult = Invoke-Tool -Root $root -Mode "Update" -ExtraArguments @("-Path", "README.md", "-HistoryLinkMapPath", $unsafeMap) -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+
+    Assert-Equal 0 $unsafeResult.ExitCode "Unsafe URL should be rejected/fallback without failing metadata repair."
+    $unsafeContent = Get-Content -LiteralPath $readme -Raw
+    Assert-True ($unsafeContent -notmatch "javascript:") "Unsafe URL must not be emitted."
+}
+
+Invoke-Test "History link map commit proof rejects wrong or incomplete proof" {
+    function New-StaleBodyChangeRepository {
+        $caseRoot = New-TestRepository
+        $caseReadme = Join-Path $caseRoot "README.md"
+        Write-Utf8File -Path $caseReadme -Content (Get-MarkdownWithMetadata -Version "1")
+        Commit-All -Root $caseRoot
+        $caseBase = (Invoke-Git -Root $caseRoot -Arguments @("rev-parse", "HEAD")).Trim()
+        Write-Utf8File -Path $caseReadme -Content (Get-MarkdownWithMetadata -Version "1" -Body "# Title`nChanged body.`n")
+        Commit-All -Root $caseRoot -Message "readme body"
+        $caseBodyCommit = (Invoke-Git -Root $caseRoot -Arguments @("rev-parse", "HEAD")).Trim()
+        Write-Utf8File -Path (Join-Path $caseRoot "docs\other.md") -Content "# Other`n"
+        Commit-All -Root $caseRoot -Message "other body"
+        $caseHead = (Invoke-Git -Root $caseRoot -Arguments @("rev-parse", "HEAD")).Trim()
+        [pscustomobject]@{ Root = $caseRoot; Readme = $caseReadme; Base = $caseBase; BodyCommit = $caseBodyCommit; Head = $caseHead }
+    }
+
+    $wrongCommit = New-StaleBodyChangeRepository
+    $wrongCommitMap = Write-HistoryLinkMap -Root $wrongCommit.Root -Links @{
+        "README.md" = @{
+            path = "README.md"
+            url = "https://github.com/example/repo/commit/$($wrongCommit.Head)"
+            linkText = "View Commit"
+            commitSha = $wrongCommit.Head
+            bodyChanged = $true
+        }
+    }
+    $wrongCommitResult = Invoke-Tool -Root $wrongCommit.Root -Mode "Update" -ExtraArguments @("-Path", "README.md", "-BaseSha", $wrongCommit.Base, "-HeadSha", $wrongCommit.Head, "-HistoryLinkMapPath", $wrongCommitMap) -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+    Assert-Equal 0 $wrongCommitResult.ExitCode "Wrong commit proof should not make metadata repair fail."
+    Assert-True ((Get-Content -LiteralPath $wrongCommit.Readme -Raw) -notmatch $wrongCommit.Head) "Commit that did not change README managed body must not be emitted."
+
+    $mismatch = New-StaleBodyChangeRepository
+    $mismatchMap = Write-HistoryLinkMap -Root $mismatch.Root -Links @{
+        "README.md" = @{
+            path = "README.md"
+            url = "https://github.com/example/repo/commit/$($mismatch.BodyCommit)"
+            linkText = "View Commit"
+            commitSha = $mismatch.Head
+            bodyChanged = $true
+        }
+    }
+    $mismatchResult = Invoke-Tool -Root $mismatch.Root -Mode "Update" -ExtraArguments @("-Path", "README.md", "-BaseSha", $mismatch.Base, "-HeadSha", $mismatch.Head, "-HistoryLinkMapPath", $mismatchMap) -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+    Assert-Equal 0 $mismatchResult.ExitCode "Mismatched commitSha proof should not make metadata repair fail."
+    Assert-True ((Get-Content -LiteralPath $mismatch.Readme -Raw) -notmatch $mismatch.BodyCommit) "Mismatched commitSha must reject the URL."
+
+    $missingBodyChanged = New-StaleBodyChangeRepository
+    $missingMap = Write-HistoryLinkMap -Root $missingBodyChanged.Root -Links @{
+        "README.md" = @{
+            path = "README.md"
+            url = "https://github.com/example/repo/commit/$($missingBodyChanged.BodyCommit)"
+            linkText = "View Commit"
+            commitSha = $missingBodyChanged.BodyCommit
+        }
+    }
+    $missingResult = Invoke-Tool -Root $missingBodyChanged.Root -Mode "Update" -ExtraArguments @("-Path", "README.md", "-BaseSha", $missingBodyChanged.Base, "-HeadSha", $missingBodyChanged.Head, "-HistoryLinkMapPath", $missingMap) -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+    Assert-Equal 0 $missingResult.ExitCode "Missing bodyChanged proof should not make metadata repair fail."
+    Assert-True ((Get-Content -LiteralPath $missingBodyChanged.Readme -Raw) -notmatch $missingBodyChanged.BodyCommit) "Missing bodyChanged proof must reject the URL."
+
+    $falseBodyChanged = New-StaleBodyChangeRepository
+    $falseMap = Write-HistoryLinkMap -Root $falseBodyChanged.Root -Links @{
+        "README.md" = @{
+            path = "README.md"
+            url = "https://github.com/example/repo/commit/$($falseBodyChanged.BodyCommit)"
+            linkText = "View Commit"
+            commitSha = $falseBodyChanged.BodyCommit
+            bodyChanged = $false
+        }
+    }
+    $falseResult = Invoke-Tool -Root $falseBodyChanged.Root -Mode "Update" -ExtraArguments @("-Path", "README.md", "-BaseSha", $falseBodyChanged.Base, "-HeadSha", $falseBodyChanged.Head, "-HistoryLinkMapPath", $falseMap) -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+    Assert-Equal 0 $falseResult.ExitCode "False bodyChanged proof should not make metadata repair fail."
+    Assert-True ((Get-Content -LiteralPath $falseBodyChanged.Readme -Raw) -notmatch $falseBodyChanged.BodyCommit) "False bodyChanged proof must reject the URL."
+}
+
+Invoke-Test "Managed presentation URL validation rejects unrelated and generic repository URLs" {
+    $root = New-TestRepository
+    $readme = Join-Path $root "README.md"
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -CurrentChangesUrl "javascript:alert")
+
+    $unsafeResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md") -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+
+    Assert-True ($unsafeResult.ExitCode -ne 0) "Unsafe URL schemes in managed presentation should fail validation."
+    Assert-True ($unsafeResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
+
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -CurrentChangesUrl "../commit/4444444444444444444444444444444444444444")
+    $relativeResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md") -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+
+    Assert-True ($relativeResult.ExitCode -ne 0) "Relative URLs in managed presentation should fail validation."
+    Assert-True ($relativeResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
+
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -CurrentChangesUrl "https://github.com/example/repo/commit/4444444444444444444444444444444444444444")
+    $missingIdentityResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md") -Environment @{ GITHUB_REPOSITORY = ""; GITHUB_SERVER_URL = "" }
+
+    Assert-True ($missingIdentityResult.ExitCode -ne 0) "Managed history URLs should fail when repository identity cannot be resolved."
+    Assert-True ($missingIdentityResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
+
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -CurrentChangesUrl "https://example.github.io/example/repo/commit/4444444444444444444444444444444444444444")
+    $githubIoResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md") -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+
+    Assert-True ($githubIoResult.ExitCode -ne 0) "github.io URLs should fail managed history URL validation."
+    Assert-True ($githubIoResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
+
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -CurrentChangesUrl "https://github.com/example/repo/tree/4444444444444444444444444444444444444444/README.md")
+    $treeResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md") -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+
+    Assert-True ($treeResult.ExitCode -ne 0) "Tree URLs should fail because they are not file-specific changes URLs."
+    Assert-True ($treeResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
+
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -CurrentChangesUrl "https://github.com/example/repo/blob/4444444444444444444444444444444444444444/README.md")
+    $blobResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md") -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+
+    Assert-True ($blobResult.ExitCode -ne 0) "Blob URLs should fail because history entries must link to changes, not file-at-version views."
+    Assert-True ($blobResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
+
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -CurrentChangesUrl "https://github.com/other/repo/commit/4444444444444444444444444444444444444444")
+
+    $result = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md") -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+
+    Assert-True ($result.ExitCode -ne 0) "Unrelated repository URLs in managed presentation should fail validation."
+    Assert-True ($result.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
+
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -CurrentChangesUrl "https://github.com/example/repo")
+    $genericResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md") -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+
+    Assert-True ($genericResult.ExitCode -ne 0) "Generic repository home URLs should fail validation."
+    Assert-True ($genericResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
+}
+
+Invoke-Test "ContentChanges mode uses managed-body semantics for multi-commit ranges" {
+    $root = New-TestRepository
+    $readme = Join-Path $root "README.md"
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1")
+    Commit-All -Root $root
+    $base = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
+
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -Body "# Title`nBody change in earlier commit.`n")
+    Commit-All -Root $root -Message "body change"
+    $bodyCommit = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
+
+    Write-Utf8File -Path (Join-Path $root "docs\other.md") -Content "# Other`n"
+    Commit-All -Root $root -Message "unrelated head"
+    $headCommit = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
+
+    $bodyResult = Invoke-Tool -Root $root -Mode "ContentChanges" -ExtraArguments @("-Path", "README.md", "-BaseSha", $base, "-HeadSha", $bodyCommit, "-ContentChangeOutputPath", "body-change.json")
+    $headResult = Invoke-Tool -Root $root -Mode "ContentChanges" -ExtraArguments @("-Path", "README.md", "-BaseSha", $bodyCommit, "-HeadSha", $headCommit, "-ContentChangeOutputPath", "head-change.json")
+
+    Assert-Equal 0 $bodyResult.ExitCode "ContentChanges should classify the body-changing commit."
+    Assert-Equal 0 $headResult.ExitCode "ContentChanges should classify the non-body-changing head commit."
+    $bodyJson = Read-JsonFile (Join-Path $root "body-change.json")
+    $headJson = Read-JsonFile (Join-Path $root "head-change.json")
+    Assert-True ([bool] $bodyJson.contentChanges[0].bodyChanged) "Earlier content-changing commit should be detected."
+    Assert-True (-not [bool] $headJson.contentChanges[0].bodyChanged) "Later unrelated head commit should not be treated as a body change."
+}
+
+Invoke-Test "ContentChanges mode treats root new-file commits as introduced content" {
+    $root = New-TestRepository
+    Write-Utf8File -Path (Join-Path $root "README.md") -Content "# Root file`n"
+    Commit-All -Root $root -Message "root file"
+    $rootCommit = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
+
+    $result = Invoke-Tool -Root $root -Mode "ContentChanges" -ExtraArguments @("-Path", "README.md", "-HeadSha", $rootCommit, "-ContentChangeOutputPath", "root-change.json")
+
+    Assert-Equal 0 $result.ExitCode "Root commit content classification should pass."
+    $json = Read-JsonFile (Join-Path $root "root-change.json")
+    Assert-True ([bool] $json.contentChanges[0].newFile) "Root commit should report the file as newly introduced."
+    Assert-True ([bool] $json.contentChanges[0].bodyChanged) "Root commit should report introduced content as a body change."
+}
+
+Invoke-Test "Resolver maps each file to newest body-changing commit, not unrelated head" {
+    $root = New-TestRepository
+    $readme = Join-Path $root "README.md"
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1")
+    Commit-All -Root $root
+    $base = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -Body "# Title`nBody change in commit A.`n")
+    Commit-All -Root $root -Message "commit A readme"
+    $commitA = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
+    Write-Utf8File -Path (Join-Path $root "docs\other.md") -Content "# Other`n"
+    Commit-All -Root $root -Message "commit B other"
+    $commitB = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
+    "README.md" | Set-Content -LiteralPath (Join-Path $root "paths.txt") -Encoding utf8NoBOM
+    @{ before = $base; after = $commitB } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root "event.json") -Encoding utf8NoBOM
+
+    $result = Invoke-Resolver -Root $root -ExtraArguments @("-PathListPath", "paths.txt", "-EventName", "push", "-EventPayloadPath", "event.json", "-Repository", "example/repo", "-ServerUrl", "https://github.com", "-OutputPath", "links.json")
+
+    Assert-Equal 0 $result.ExitCode "Resolver should pass."
+    $links = Read-JsonFile (Join-Path $root "links.json")
+    $entry = $links.'README.md'
+    Assert-Equal $commitA $entry.commitSha "Resolver should choose commit A for README, not unrelated commit B."
+    Assert-True ([bool] $entry.bodyChanged) "Resolver should emit bodyChanged proof."
+    Assert-Equal "View Commit" $entry.linkText "Resolver should label commit fallback links as View Commit."
+}
+
+Invoke-Test "Resolver handles root introductions and skips ambiguous merge commits" {
+    $root = New-TestRepository
+    Write-Utf8File -Path (Join-Path $root "README.md") -Content "# Root file`n"
+    Commit-All -Root $root -Message "root readme"
+    $rootCommit = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
+    "README.md" | Set-Content -LiteralPath (Join-Path $root "paths.txt") -Encoding utf8NoBOM
+    @{ before = "0000000000000000000000000000000000000000"; after = $rootCommit } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root "event.json") -Encoding utf8NoBOM
+
+    $rootResult = Invoke-Resolver -Root $root -ExtraArguments @("-PathListPath", "paths.txt", "-EventName", "push", "-EventPayloadPath", "event.json", "-Repository", "example/repo", "-ServerUrl", "https://github.com", "-OutputPath", "links.json")
+
+    Assert-Equal 0 $rootResult.ExitCode "Resolver should pass for root introduction."
+    $rootLinks = Read-JsonFile (Join-Path $root "links.json")
+    Assert-Equal $rootCommit $rootLinks.'README.md'.commitSha "Resolver should map a root file introduction to the root commit."
+
+    $mergeRoot = New-TestRepository
+    $mergeReadme = Join-Path $mergeRoot "README.md"
+    Write-Utf8File -Path $mergeReadme -Content (Get-MarkdownWithMetadata -Version "1")
+    Commit-All -Root $mergeRoot -Message "base"
+    $mergeBase = (Invoke-Git -Root $mergeRoot -Arguments @("rev-parse", "HEAD")).Trim()
+    Invoke-Git -Root $mergeRoot -Arguments @("checkout", "-q", "-b", "side") | Out-Null
+    Write-Utf8File -Path (Join-Path $mergeRoot "docs\side.md") -Content "# Side`n"
+    Commit-All -Root $mergeRoot -Message "side only"
+    Invoke-Git -Root $mergeRoot -Arguments @("checkout", "-q", "master") | Out-Null
+    Write-Utf8File -Path (Join-Path $mergeRoot "docs\main.md") -Content "# Main`n"
+    Commit-All -Root $mergeRoot -Message "main only"
+    Invoke-Git -Root $mergeRoot -Arguments @("merge", "--no-ff", "--no-commit", "side") | Out-Null
+    Write-Utf8File -Path $mergeReadme -Content (Get-MarkdownWithMetadata -Version "1" -Body "# Title`nMerge-only body change.`n")
+    Commit-All -Root $mergeRoot -Message "ambiguous merge"
+    $mergeCommit = (Invoke-Git -Root $mergeRoot -Arguments @("rev-parse", "HEAD")).Trim()
+    "README.md" | Set-Content -LiteralPath (Join-Path $mergeRoot "paths.txt") -Encoding utf8NoBOM
+    @{ before = $mergeBase; after = $mergeCommit } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $mergeRoot "event.json") -Encoding utf8NoBOM
+
+    $mergeResult = Invoke-Resolver -Root $mergeRoot -ExtraArguments @("-PathListPath", "paths.txt", "-EventName", "push", "-EventPayloadPath", "event.json", "-Repository", "example/repo", "-ServerUrl", "https://github.com", "-OutputPath", "links.json")
+
+    Assert-Equal 0 $mergeResult.ExitCode "Resolver should not fail on ambiguous merge commits."
+    $mergeLinksRaw = Get-Content -LiteralPath (Join-Path $mergeRoot "links.json") -Raw
+    Assert-True ($mergeLinksRaw -eq "{}" -or $mergeLinksRaw -notmatch "README.md") "Ambiguous merge-only body changes must not produce guessed link-map proof."
 }
 
 Invoke-Test "Manual dotted version rebaseline is no-write when body and metadata are otherwise stable" {
@@ -203,6 +530,88 @@ Invoke-Test "Manual dotted version rebaseline is no-write when body and metadata
     Assert-True ($result.Stdout -match "manual version rebaseline") "Report should mention manual rebaseline."
     $changed = Read-JsonFile (Join-Path $root "changed.json")
     Assert-Equal 0 @($changed.changedFiles).Count "Changed files should stay empty for no-write rebaseline."
+}
+
+Invoke-Test "Full manifest Bootstrap initializes all eligible governed files" {
+    $root = New-TestRepository
+    Write-Utf8File -Path (Join-Path $root "README.md") -Content "# Readme`n"
+    Write-Utf8File -Path (Join-Path $root "docs\guide.md") -Content "# Guide`n"
+    Write-Utf8File -Path (Join-Path $root ".github\tools\sync-config\documentation\sync-manifest.md") -Content "# Sync Manifest`n"
+    Write-Utf8File -Path (Join-Path $root ".github\tools\sync-config\documentation\types\manifest-document.md") -Content "# ManifestDocument`n"
+
+    $manifestPath = Join-Path $root ".github\tools\doc-metadata\doc-metadata-manifest.json"
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -Depth 32
+    $manifest.include = @("README.md", "docs/**/*.md", ".github/tools/sync-config/documentation/**/*.md")
+    $manifest.exclude = @()
+    $manifest | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
+
+    $result = Invoke-Tool -Root $root -Mode "Bootstrap" -ExtraArguments @("-ReportOutputPath", "report.json")
+
+    Assert-Equal 0 $result.ExitCode "Bootstrap should pass."
+    $report = Read-JsonFile (Join-Path $root "report.json")
+    foreach ($path in @("README.md", "docs/guide.md", ".github/tools/sync-config/documentation/sync-manifest.md", ".github/tools/sync-config/documentation/types/manifest-document.md")) {
+        Assert-True (@($report.updatedFiles.path) -contains $path) "$path should be initialized."
+        $content = Get-Content -LiteralPath (Join-Path $root ($path.Replace("/", [System.IO.Path]::DirectorySeparatorChar))) -Raw
+        Assert-True ($content.StartsWith("---`nVersion: 1`nCreated:", [System.StringComparison]::Ordinal)) "$path should start with stable managed metadata."
+    }
+}
+
+Invoke-Test "Existing file onboarding does not create content history for metadata-only initialization" {
+    $root = New-TestRepository
+    $readme = Join-Path $root "README.md"
+    Write-Utf8File -Path $readme -Content "# Title`r`nExisting body.`r`n"
+    Commit-All -Root $root
+
+    $result = Invoke-Tool -Root $root -Mode "Bootstrap" -ExtraArguments @("-Path", "README.md", "-ReportOutputPath", "report.json")
+
+    Assert-Equal 0 $result.ExitCode "Bootstrap should pass."
+    $content = Get-Content -LiteralPath $readme -Raw
+    Assert-True ($content -match "Version: 1") "Existing file should be initialized at Version 1."
+    Assert-Equal 0 ([regex]::Matches($content, "(?m)^- Updated:").Count) "Existing metadata-only onboarding should not create a content history entry."
+    Assert-True ($content -match "<!-- doc-metadata-presentation:end -->\r?\n\r?\n# Title") "Onboarding should preserve a clean Markdown body boundary."
+}
+
+Invoke-Test "Body repair does not strip unrelated governed metadata" {
+    $root = New-TestRepository
+    $one = Join-Path $root "docs\one.md"
+    $two = Join-Path $root "docs\two.md"
+    Write-Utf8File -Path $one -Content "# One`n"
+    Write-Utf8File -Path $two -Content "# Two`n"
+    $bootstrap = Invoke-Tool -Root $root -Mode "Bootstrap" -ExtraArguments @("-ReportOutputPath", "bootstrap-report.json")
+    Assert-Equal 0 $bootstrap.ExitCode "Bootstrap should pass."
+    Commit-All -Root $root
+    $twoBefore = Get-Content -LiteralPath $two -Raw
+
+    $oneContent = Get-Content -LiteralPath $one -Raw
+    Write-Utf8File -Path $one -Content ($oneContent -replace "# One", "# One Changed")
+    $result = Invoke-Tool -Root $root -Mode "Update" -ExtraArguments @("-Path", "docs/one.md", "-ChangedFilesOutputPath", "changed.json", "-ReportOutputPath", "repair-report.json")
+
+    Assert-Equal 0 $result.ExitCode "Repair should pass."
+    Assert-True ((Get-Content -LiteralPath $one -Raw) -match "Version: 2") "Changed file should increment."
+    Assert-Equal $twoBefore (Get-Content -LiteralPath $two -Raw) "Unrelated governed metadata should be retained unchanged."
+    $changed = Read-JsonFile (Join-Path $root "changed.json")
+    Assert-Equal 1 @($changed.changedFiles).Count "Only the repaired body-changed file should be reported changed."
+    Assert-Equal "docs/one.md" $changed.changedFiles[0] "ChangedFilesOutputPath should name only docs/one.md."
+}
+
+Invoke-Test "Metadata-only presentation repair preserves metadata and current View Changes" {
+    $root = New-TestRepository
+    $readme = Join-Path $root "README.md"
+    $content = Get-MarkdownWithMetadata -Version "4" -Updated "2026-02-01T00:00:00+00:00" -CurrentChangesUrl "https://github.com/example/repo/commit/2222222222222222222222222222222222222222"
+    $content = $content -replace "<!-- doc-metadata-presentation:end -->\n\n", "<!-- doc-metadata-presentation:end -->`n"
+    Write-Utf8File -Path $readme -Content $content
+    Commit-All -Root $root
+
+    $result = Invoke-Tool -Root $root -Mode "Update" -ExtraArguments @("-Path", "README.md", "-ChangedFilesOutputPath", "changed.json", "-ReportOutputPath", "report.json") -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+
+    Assert-Equal 0 $result.ExitCode "Presentation repair should pass."
+    $after = Get-Content -LiteralPath $readme -Raw
+    Assert-True ($after -match "Version: 4") "Metadata-only repair must not change Version."
+    Assert-True ($after -match "Updated: 2026-02-01T00:00:00\+00:00") "Metadata-only repair must not change Updated."
+    Assert-True ($after -match "Author: Doc Metadata Tests") "Metadata-only repair must not change Author."
+    Assert-True ($after -match "\[<b>View Changes</b>\]\(https://github.com/example/repo/commit/2222222222222222222222222222222222222222\)") "Metadata-only repair should preserve the current View Changes link."
+    Assert-Equal 1 ([regex]::Matches($after, "(?m)^- Updated:").Count) "Metadata-only repair must not add a history entry."
+    Assert-True ($after -match "<!-- doc-metadata-presentation:end -->\r?\n\r?\n# Title") "Presentation repair should restore the managed trailing blank line."
 }
 
 Invoke-Test "Version decrease is rejected" {
@@ -246,6 +655,12 @@ Invoke-Test "Custom front matter fields are preserved and ignored" {
     Assert-Equal 0 $result.ExitCode "Bootstrap should pass."
     $content = Get-Content -LiteralPath $readme -Raw
     Assert-True ($content -match "Tool: Visual Studio Code" -and $content -match "ReviewState: Draft") "Custom fields should be preserved."
+    Assert-True ($content -match "(?s)^---\r?\nVersion: 1\r?\nCreated: 2026-01-01T00:00:00\+00:00\r?\nUpdated: 2026-01-01T00:00:00\+00:00\r?\nAuthor: Doc Metadata Tests\r?\nTool: Visual Studio Code\r?\nReviewState: Draft") "Managed field order should be stable before custom fields."
+
+    $second = Invoke-Tool -Root $root -Mode "Bootstrap" -ExtraArguments @("-Path", "README.md", "-ChangedFilesOutputPath", "changed.json")
+    Assert-Equal 0 $second.ExitCode "Second Bootstrap should pass."
+    $changed = Read-JsonFile (Join-Path $root "changed.json")
+    Assert-Equal 0 @($changed.changedFiles).Count "Repeated run should be idempotent."
 }
 
 Invoke-Test "Manifest removes overrides and uses include object scoped configuration" {
@@ -359,10 +774,13 @@ Invoke-Test "GitHub summary and changed-files output contracts remain stable" {
 
 Invoke-Test "Workflow preserves repair design and deterministic branch hash" {
     $workflow = Get-Content -LiteralPath $WorkflowPath -Raw
+    $resolver = Get-Content -LiteralPath (Join-Path $ToolingSource "resolve-content-change-links.ps1") -Raw
 
     Assert-True ($workflow -match "analyze-document-metadata") "Workflow should include analyze job."
     Assert-True ($workflow -match "repair-document-metadata") "Workflow should include repair job."
     Assert-True ($workflow -match "final-document-metadata-status") "Workflow should include final status job."
+    Assert-True ($workflow -notmatch "(?m)^\s+paths:\s*$") "Workflow must not use narrow paths filters that can miss manifest-governed files."
+    Assert-True ($workflow -notmatch '"README\.md"|\"docs/\*\*\"|\"specs/\*\*\"') "Workflow should not duplicate manifest include patterns as trigger filters."
     Assert-True ($workflow -match "analyze-document-metadata:[\s\S]*?permissions:\s*\r?\n\s+contents: read") "Analyze job should use contents: read."
     Assert-True ($workflow -match "repair-document-metadata:[\s\S]*?permissions:\s*\r?\n\s+contents: write\s*\r?\n\s+pull-requests: write") "Repair job should have write permissions only in repair job."
     Assert-True ($workflow -notmatch "pull_request_target") "Workflow must not use pull_request_target."
@@ -372,6 +790,14 @@ Invoke-Test "Workflow preserves repair design and deterministic branch hash" {
     Assert-True ($workflow -notmatch 'doc-metadata/repair/\$safeTarget') "Workflow must not use the old repair branch prefix."
     Assert-True ($workflow -match "Post-repair Check") "Workflow should run mandatory post-repair Check."
     Assert-True ($workflow -match "doc-metadata-links.json") "Workflow should pass stable history links to the trusted script."
+    Assert-True ($workflow -match "Resolve content-change links") "Workflow should resolve per-file content-change links before repair."
+    Assert-True ($workflow -match "resolve-content-change-links.ps1") "Workflow should call the trusted resolver script."
+    Assert-True ($workflow -match "update-doc-metadata.ps1") "Workflow should pass the trusted metadata script to the resolver."
+    Assert-True (-not $workflow.Contains('${{ github.event.pull_request.head.sha || github.sha }}')) "Workflow must not assign one event head commit URL to every file."
+    Assert-True ($workflow -match "doc-metadata-post-check-report.json") "Workflow should write a post-repair Check report."
+    Assert-True ($workflow -match "Remaining invalid files" -and $workflow -match "Remaining unrecoverable files") "Final status should list remaining post-repair failures."
+    Assert-True ($resolver -match '"-Mode", "ContentChanges"' -or $resolver -match "-Mode ContentChanges") "Resolver should use ContentChanges mode as its source of managed-body truth."
+    Assert-True ($resolver -match "parents.Count -gt 1" -and $resolver -match "Skipping ambiguous merge commit") "Resolver should not guess for ambiguous merge-parent commits."
 }
 
 Write-Host ""

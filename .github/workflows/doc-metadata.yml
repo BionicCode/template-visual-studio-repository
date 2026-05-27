@@ -2,24 +2,10 @@ name: Document metadata
 
 on:
   pull_request:
-    paths:
-      - "README.md"
-      - "docs/**"
-      - "specs/**"
-      - ".github/tools/doc-metadata/**"
-      - ".github/scripts/doc-metadata/**"
-      - ".github/workflows/doc-metadata.yml"
   push:
     branches:
       - main
       - master
-    paths:
-      - "README.md"
-      - "docs/**"
-      - "specs/**"
-      - ".github/tools/doc-metadata/**"
-      - ".github/scripts/doc-metadata/**"
-      - ".github/workflows/doc-metadata.yml"
   workflow_dispatch:
 
 concurrency:
@@ -136,6 +122,10 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    outputs:
+      repaired_files: ${{ steps.post_check_outputs.outputs.repaired_files }}
+      remaining_failed_files: ${{ steps.post_check_outputs.outputs.remaining_failed_files }}
+      remaining_unrecoverable_files: ${{ steps.post_check_outputs.outputs.remaining_unrecoverable_files }}
     concurrency:
       group: codex-doc-metadata-repair-${{ github.event.pull_request.head.ref || github.ref_name }}
       cancel-in-progress: false
@@ -229,6 +219,20 @@ jobs:
           $paths = @($report.analysis.repairableFiles | ForEach-Object { $_.path } | Sort-Object -Unique)
           $paths | Set-Content -LiteralPath doc-metadata-repair-paths.txt -Encoding utf8NoBOM
 
+      - name: Resolve content-change links
+        shell: pwsh
+        working-directory: work
+        run: |
+          ../trusted/.github/scripts/doc-metadata/resolve-content-change-links.ps1 `
+            -Root . `
+            -MetadataScriptPath ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 `
+            -PathListPath doc-metadata-repair-paths.txt `
+            -EventName "${{ github.event_name }}" `
+            -EventPayloadPath "${{ github.event_path }}" `
+            -Repository "${{ github.repository }}" `
+            -ServerUrl "${{ github.server_url }}" `
+            -OutputPath doc-metadata-links.json
+
       - name: Repair document metadata
         id: repair
         shell: pwsh
@@ -239,17 +243,6 @@ jobs:
             "changed=false" >> $env:GITHUB_OUTPUT
             exit 0
           }
-
-          $commitSha = "${{ github.event.pull_request.head.sha || github.sha }}"
-          $commitUrl = "https://github.com/${{ github.repository }}/commit/$commitSha"
-          $historyLinks = [ordered]@{}
-          foreach ($path in $paths) {
-            $historyLinks[$path] = [ordered]@{
-              url = $commitUrl
-              linkText = "View Commit"
-            }
-          }
-          $historyLinks | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath doc-metadata-links.json -Encoding utf8NoBOM
 
           ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 `
             -Mode Update `
@@ -321,6 +314,8 @@ jobs:
           }
 
       - name: Post-repair Check
+        id: post_check
+        continue-on-error: true
         shell: pwsh
         working-directory: work
         run: |
@@ -338,11 +333,46 @@ jobs:
           }
 
           if ([string]::IsNullOrWhiteSpace($base)) {
-            ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 -Mode Check -Root .
+            ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 -Mode Check -Root . -ReportOutputPath doc-metadata-post-check-report.json
           }
           else {
-            ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 -Mode Check -Root . -BaseSha $base -HeadSha $head
+            ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 -Mode Check -Root . -BaseSha $base -HeadSha $head -ReportOutputPath doc-metadata-post-check-report.json
           }
+
+      - name: Publish post-repair Check outputs
+        id: post_check_outputs
+        if: always()
+        shell: pwsh
+        working-directory: work
+        run: |
+          function Join-UniqueValues {
+            param([object[]] $Values)
+            (@($Values | Where-Object { -not [string]::IsNullOrWhiteSpace([string] $_) } | Sort-Object -Unique) -join ", ")
+          }
+
+          $repaired = @()
+          if (Test-Path -LiteralPath doc-metadata-repair-report.json -PathType Leaf) {
+            $repairReport = Get-Content -LiteralPath doc-metadata-repair-report.json -Raw | ConvertFrom-Json -Depth 32
+            $repaired = @($repairReport.updatedFiles | ForEach-Object { $_.path })
+          }
+
+          $failed = @()
+          $unrecoverable = @()
+          if (Test-Path -LiteralPath doc-metadata-post-check-report.json -PathType Leaf) {
+            $postReport = Get-Content -LiteralPath doc-metadata-post-check-report.json -Raw | ConvertFrom-Json -Depth 32
+            $failed = @($postReport.failedFiles | ForEach-Object { $_.path })
+            $unrecoverable = @($postReport.analysis.unrecoverableFiles | ForEach-Object { $_.path })
+          }
+
+          "repaired_files=$(Join-UniqueValues $repaired)" >> $env:GITHUB_OUTPUT
+          "remaining_failed_files=$(Join-UniqueValues $failed)" >> $env:GITHUB_OUTPUT
+          "remaining_unrecoverable_files=$(Join-UniqueValues $unrecoverable)" >> $env:GITHUB_OUTPUT
+
+      - name: Fail if post-repair Check failed
+        if: steps.post_check.outcome != 'success'
+        shell: pwsh
+        run: |
+          Write-Error "Post-repair Check found remaining governed metadata failures. Repaired files: ${{ steps.post_check_outputs.outputs.repaired_files }}. Remaining failed files: ${{ steps.post_check_outputs.outputs.remaining_failed_files }}. Remaining unrecoverable files: ${{ steps.post_check_outputs.outputs.remaining_unrecoverable_files }}."
 
   final-document-metadata-status:
     name: Document metadata final status
@@ -362,6 +392,9 @@ jobs:
           $repairSafe = "${{ needs.analyze-document-metadata.outputs.repair_safe }}"
           $unrecoverableFailure = "${{ needs.analyze-document-metadata.outputs.unrecoverable_failure }}"
           $repairResult = "${{ needs.repair-document-metadata.result }}"
+          $repairedFiles = "${{ needs.repair-document-metadata.outputs.repaired_files }}"
+          $remainingFailedFiles = "${{ needs.repair-document-metadata.outputs.remaining_failed_files }}"
+          $remainingUnrecoverableFiles = "${{ needs.repair-document-metadata.outputs.remaining_unrecoverable_files }}"
 
           if ($unrecoverableFailure -eq "true") {
             Write-Error "Document metadata has unrecoverable failures. Review the analyze report."
@@ -370,7 +403,7 @@ jobs:
             Write-Error "Document metadata repair is required but not safe."
           }
           elseif ($repairRequired -eq "true" -and $repairResult -ne "success") {
-            Write-Error "Document metadata repair was required but did not complete successfully. Result: $repairResult."
+            Write-Error "Document metadata repair was required but did not complete successfully. Result: $repairResult. Repaired files: $repairedFiles. Remaining invalid files: $remainingFailedFiles. Remaining unrecoverable files: $remainingUnrecoverableFiles."
           }
           elseif ($repairRequired -ne "true" -and $metadataValid -ne "true") {
             Write-Error "Document metadata is not valid and no safe repair was available."

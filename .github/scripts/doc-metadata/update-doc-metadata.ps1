@@ -2,7 +2,7 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Analyze", "Bootstrap", "Update", "Check")]
+    [ValidateSet("Analyze", "Bootstrap", "Update", "Check", "ContentChanges")]
     [string] $Mode,
 
     [string] $Root,
@@ -25,7 +25,9 @@ param(
 
     [string] $ReportOutputPath,
 
-    [string] $HistoryLinkMapPath
+    [string] $HistoryLinkMapPath,
+
+    [string] $ContentChangeOutputPath
 )
 
 Set-StrictMode -Version Latest
@@ -34,10 +36,10 @@ $ErrorActionPreference = "Stop"
 $script:RepositoryRoot = $null
 $script:ManifestFullPath = $null
 $script:ManagedFields = @("Version", "Created", "Updated", "Author")
-$script:LegacyManagedFields = @("doc_version", "created", "updated")
 $script:PresentationStartMarker = "<!-- doc-metadata-presentation:start -->"
 $script:PresentationEndMarker = "<!-- doc-metadata-presentation:end -->"
 $script:PlainTextSeparator = "-" * 80
+$script:CurrentChangesLinkPattern = '^\s*\[<b>(?:View Changes|View Commit)</b>\]\((?<url>[^)]+)\)\s*$'
 $script:TimestampPattern = "^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?[+-]\d{2}:\d{2}$"
 $script:RemediationCommand = "pwsh ./.github/scripts/doc-metadata/update-doc-metadata.ps1 -Mode Update -Root ."
 $script:DefaultAllowedDocumentExtensions = @(".md", ".markdown", ".txt")
@@ -70,6 +72,7 @@ function New-Report {
         ignoredByDeniedExtension = [System.Collections.Generic.List[object]]::new()
         ignoredBinaryOrNonText = [System.Collections.Generic.List[object]]::new()
         staleCheckSkippedFiles = [System.Collections.Generic.List[object]]::new()
+        contentChanges = [System.Collections.Generic.List[object]]::new()
         analysis = [ordered]@{
             metadataValid = $false
             repairRequired = $false
@@ -920,6 +923,16 @@ function Join-ContentLines {
     $builder.ToString()
 }
 
+function ConvertTo-ComparableBody {
+    param([string] $Content)
+
+    if ($null -eq $Content) {
+        return $null
+    }
+
+    $Content.Replace("`r`n", "`n").Replace("`r", "`n")
+}
+
 function Get-PreferredNewLine {
     param([string] $Content)
 
@@ -1605,15 +1618,22 @@ function Remove-ManagedPresentation {
             }
         }
 
+        $managedEndIndex = $endIndex
+        $nextIndex = $endIndex + 1
+        while ($nextIndex -lt $lines.Count -and [string]::IsNullOrWhiteSpace($lines[$nextIndex].Text)) {
+            $managedEndIndex = $nextIndex
+            $nextIndex++
+        }
+
         $remaining = [System.Collections.Generic.List[object]]::new()
         for ($index = 0; $index -lt $lines.Count; $index++) {
-            if ($index -ge $startIndex -and $index -le $endIndex) {
+            if ($index -ge $startIndex -and $index -le $managedEndIndex) {
                 continue
             }
             $remaining.Add($lines[$index])
         }
 
-        $presentationLines = @($lines[$startIndex..$endIndex] | ForEach-Object { $_.Text })
+        $presentationLines = @($lines[$startIndex..$managedEndIndex] | ForEach-Object { $_.Text })
         return [pscustomobject]@{
             Body = (Join-ContentLines $remaining.ToArray())
             HasPresentation = $true
@@ -1913,11 +1933,10 @@ function Update-MetadataLines {
     }
 
     $managedFieldNames = @($Config.versionField, $Config.createdField, $Config.updatedField, $Config.authorField)
-    $allManagedOrLegacyFields = @($managedFieldNames + $script:LegacyManagedFields | Select-Object -Unique)
     $customLines = [System.Collections.Generic.List[string]]::new()
     foreach ($line in @($lines)) {
         $isManagedLine = $false
-        foreach ($fieldName in $allManagedOrLegacyFields) {
+        foreach ($fieldName in $managedFieldNames) {
             if ($line -match "^\s*$([regex]::Escape($fieldName))\s*:") {
                 $isManagedLine = $true
                 break
@@ -1955,6 +1974,224 @@ function New-MetadataBlock {
     "$($Config.commentStart)$NewLine$($prefixed -join $NewLine)$NewLine$($Config.commentEnd)$NewLine"
 }
 
+function Get-ConfiguredRepositoryParts {
+    $repository = [string] $env:GITHUB_REPOSITORY
+    $server = if ([string]::IsNullOrWhiteSpace($env:GITHUB_SERVER_URL)) { "https://github.com" } else { $env:GITHUB_SERVER_URL.TrimEnd("/") }
+
+    if ([string]::IsNullOrWhiteSpace($repository) -or $repository -notmatch "^[^/]+/[^/]+$") {
+        if (Test-InGitRepository) {
+            $remote = Invoke-GitText -Arguments @("-C", $script:RepositoryRoot, "config", "--get", "remote.origin.url")
+            if ($remote.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($remote.Text.Trim())) {
+                $remoteText = $remote.Text.Trim()
+                if ($remoteText -match "^(?<server>https://[^/]+)/(?<owner>[^/]+)/(?<repo>[^/]+?)(?:\.git)?$") {
+                    $server = $Matches.server
+                    $repository = "$($Matches.owner)/$($Matches.repo)"
+                }
+                elseif ($remoteText -match "^git@(?<host>[^:]+):(?<owner>[^/]+)/(?<repo>[^/]+?)(?:\.git)?$") {
+                    $server = "https://$($Matches.host)"
+                    $repository = "$($Matches.owner)/$($Matches.repo)"
+                }
+            }
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($repository) -or $repository -notmatch "^[^/]+/[^/]+$") {
+        return $null
+    }
+
+    $serverUri = $null
+    if (-not [System.Uri]::TryCreate($server, [System.UriKind]::Absolute, [ref] $serverUri)) {
+        return $null
+    }
+
+    $parts = $repository.Split("/", 2)
+    [pscustomobject]@{
+        Host = $serverUri.Host
+        Owner = $parts[0]
+        Name = ([regex]::Replace($parts[1], "\.git$", ""))
+    }
+}
+
+function Test-ManagedHistoryUrl {
+    param(
+        [string] $Url,
+        [string] $RepoPath = ""
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Url)) {
+        return $false
+    }
+
+    $uri = $null
+    if (-not [System.Uri]::TryCreate($Url, [System.UriKind]::Absolute, [ref] $uri)) {
+        return $false
+    }
+
+    if ($uri.Scheme -ne "https") {
+        return $false
+    }
+
+    $repository = Get-ConfiguredRepositoryParts
+    if ($null -eq $repository) {
+        return $false
+    }
+
+    $decodedPath = [System.Uri]::UnescapeDataString($uri.AbsolutePath.Trim("/"))
+    $segments = @($decodedPath -split "/" | Where-Object { $_ -ne "" })
+    if ($segments.Count -lt 3) {
+        return $false
+    }
+
+    if (-not $uri.Host.Equals($repository.Host, [System.StringComparison]::OrdinalIgnoreCase) -or
+        -not $segments[0].Equals($repository.Owner, [System.StringComparison]::OrdinalIgnoreCase) -or
+        -not $segments[1].Equals($repository.Name, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $false
+    }
+
+    if ($segments.Count -eq 2) {
+        return $false
+    }
+
+    $kind = $segments[2]
+    if ($kind -eq "commit") {
+        return $segments.Count -eq 4 -and $segments[3] -match "^[0-9a-fA-F]{40}$"
+    }
+
+    if ($kind -eq "compare") {
+        return $segments.Count -ge 4 -and -not [string]::IsNullOrWhiteSpace($segments[3])
+    }
+
+    $false
+}
+
+function Get-ManagedHistoryUrlParts {
+    param([string] $Url)
+
+    $uri = $null
+    if (-not [System.Uri]::TryCreate($Url, [System.UriKind]::Absolute, [ref] $uri)) {
+        return $null
+    }
+
+    $segments = @([System.Uri]::UnescapeDataString($uri.AbsolutePath.Trim("/")) -split "/" | Where-Object { $_ -ne "" })
+    if ($segments.Count -lt 3) {
+        return $null
+    }
+
+    $commitSha = $null
+    if ($segments[2] -eq "commit" -and $segments.Count -eq 4) {
+        $commitSha = $segments[3]
+    }
+
+    [pscustomobject]@{
+        Kind = $segments[2]
+        CommitSha = $commitSha
+    }
+}
+
+function Get-ManagedPresentationUrls {
+    param([object] $MetadataInfo)
+
+    $urls = [System.Collections.Generic.List[string]]::new()
+    if ($null -eq $MetadataInfo -or -not $MetadataInfo.HasPresentation -or $MetadataInfo.IsPresentationMalformed) {
+        return $urls.ToArray()
+    }
+
+    foreach ($line in @($MetadataInfo.PresentationLines)) {
+        foreach ($match in [regex]::Matches($line, '\[<b>(?:View Changes|View Commit)</b>\]\((?<url>[^)]+)\)')) {
+            $urls.Add($match.Groups["url"].Value)
+        }
+    }
+
+    $urls.ToArray()
+}
+
+function Test-ManagedPresentationUrls {
+    param(
+        [object] $MetadataInfo,
+        [string] $RepoPath
+    )
+
+    foreach ($url in @(Get-ManagedPresentationUrls -MetadataInfo $MetadataInfo)) {
+        if (-not (Test-ManagedHistoryUrl -Url $url -RepoPath $RepoPath)) {
+            return $false
+        }
+    }
+
+    $true
+}
+
+function Test-ManagedHistoryLineIsUnproven {
+    param(
+        [string] $Line,
+        [string] $RepoPath = "",
+        [object] $Config = $null
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Line)) {
+        return $false
+    }
+
+    if ($Line -match "Changes:\s*<b>Unavailable</b>") {
+        return $true
+    }
+
+    $matches = [regex]::Matches($Line, '\[<b>(?:View Changes|View Commit)</b>\]\((?<url>[^)]+)\)')
+    if ($matches.Count -eq 0) {
+        return $false
+    }
+
+    foreach ($match in $matches) {
+        $url = $match.Groups["url"].Value
+        if (-not (Test-ManagedHistoryUrl -Url $url -RepoPath $RepoPath)) {
+            return $true
+        }
+
+        $uri = $null
+        if ([System.Uri]::TryCreate($url, [System.UriKind]::Absolute, [ref] $uri)) {
+            $segments = @([System.Uri]::UnescapeDataString($uri.AbsolutePath.Trim("/")) -split "/" | Where-Object { $_ -ne "" })
+            if ($segments.Count -eq 4 -and $segments[2] -eq "commit" -and $segments[3] -match "^[0-9a-fA-F]{40}$") {
+                $commitSha = $segments[3]
+                if (-not (Test-GitCommitExists $commitSha)) {
+                    return $true
+                }
+
+                if (-not [string]::IsNullOrWhiteSpace($RepoPath) -and $null -ne $Config) {
+                    $parentsLine = Invoke-GitText -Arguments @("-C", $script:RepositoryRoot, "rev-list", "--parents", "-n", "1", $commitSha)
+                    if ($parentsLine.ExitCode -ne 0) {
+                        return $true
+                    }
+
+                    $tokens = @($parentsLine.Text.Trim() -split "\s+" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+                    $parentCount = [Math]::Max(0, $tokens.Count - 1)
+                    if ($parentCount -gt 1) {
+                        return $true
+                    }
+
+                    $headState = Get-ManagedBodyAtRevision -Revision $commitSha -RepoPath $RepoPath -Config $Config
+                    if (-not $headState.Exists) {
+                        return $true
+                    }
+
+                    if ($parentCount -eq 0) {
+                        return $false
+                    }
+
+                    $baseState = Get-ManagedBodyAtRevision -Revision $tokens[1] -RepoPath $RepoPath -Config $Config
+                    if (-not $baseState.Exists) {
+                        return $false
+                    }
+
+                    if ($headState.Body -eq $baseState.Body) {
+                        return $true
+                    }
+                }
+            }
+        }
+    }
+
+    $false
+}
+
 function Get-HistoryEntryLines {
     param([object] $MetadataInfo)
 
@@ -1963,6 +2200,32 @@ function Get-HistoryEntryLines {
     }
 
     @($MetadataInfo.PresentationLines | Where-Object { $_ -match "^\s*-\s+Updated:" })
+}
+
+function Get-CurrentChangesLine {
+    param([object] $MetadataInfo)
+
+    if ($null -eq $MetadataInfo -or -not $MetadataInfo.HasPresentation -or $MetadataInfo.IsPresentationMalformed) {
+        return $null
+    }
+
+    foreach ($line in @($MetadataInfo.PresentationLines)) {
+        if ($line.Trim() -eq $script:PresentationStartMarker) {
+            continue
+        }
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+        if ($line.Trim() -eq "<details>") {
+            return $null
+        }
+        if ($line -match $script:CurrentChangesLinkPattern) {
+            return $line
+        }
+        return $null
+    }
+
+    $null
 }
 
 function Test-PresentationEquivalent {
@@ -1981,6 +2244,94 @@ function Test-PresentationEquivalent {
     (@($Left.PresentationLines) -join "`n") -eq (@($Right.PresentationLines) -join "`n")
 }
 
+function Test-ManagedHistoryEquivalent {
+    param(
+        [object] $Left,
+        [object] $Right,
+        [string] $RepoPath = "",
+        [object] $Config = $null
+    )
+
+    if ($null -eq $Left -or $null -eq $Right) {
+        return $false
+    }
+    if (-not $Left.HasPresentation -or -not $Right.HasPresentation -or $Left.IsPresentationMalformed -or $Right.IsPresentationMalformed) {
+        return $false
+    }
+
+    $leftCurrent = Get-CurrentChangesLine -MetadataInfo $Left
+    $rightCurrent = Get-CurrentChangesLine -MetadataInfo $Right
+    if ($leftCurrent -ne $rightCurrent) {
+        if ([string]::IsNullOrWhiteSpace($leftCurrent) -and (Test-ManagedHistoryLineIsUnproven -Line $rightCurrent -RepoPath $RepoPath -Config $Config)) {
+            $leftHistory = @(Get-HistoryEntryLines -MetadataInfo $Left)
+            $rightHistory = @(Get-HistoryEntryLines -MetadataInfo $Right | Where-Object { -not (Test-ManagedHistoryLineIsUnproven -Line $_ -RepoPath $RepoPath -Config $Config) })
+            return (($leftHistory -join "`n") -eq ($rightHistory -join "`n"))
+        }
+
+        return $false
+    }
+
+    $leftHistoryLines = @(Get-HistoryEntryLines -MetadataInfo $Left)
+    $rightHistoryLines = @(Get-HistoryEntryLines -MetadataInfo $Right)
+    if (($leftHistoryLines -join "`n") -eq ($rightHistoryLines -join "`n")) {
+        return $true
+    }
+
+    if ([string]::IsNullOrWhiteSpace($RepoPath)) {
+        return $false
+    }
+
+    $rightProvenHistoryLines = @($rightHistoryLines | Where-Object { -not (Test-ManagedHistoryLineIsUnproven -Line $_ -RepoPath $RepoPath -Config $Config) })
+    ($leftHistoryLines -join "`n") -eq ($rightProvenHistoryLines -join "`n")
+}
+
+function Test-TrueValue {
+    param([object] $Value)
+
+    if ($Value -is [bool]) {
+        return [bool] $Value
+    }
+
+    if ($Value -is [string]) {
+        return ([string] $Value).Equals("true", [System.StringComparison]::OrdinalIgnoreCase)
+    }
+
+    $false
+}
+
+function Test-CommitManagedBodyChanged {
+    param(
+        [string] $RepoPath,
+        [object] $Config,
+        [string] $CommitSha
+    )
+
+    if ([string]::IsNullOrWhiteSpace($CommitSha) -or $CommitSha -notmatch "^[0-9a-fA-F]{40}$" -or -not (Test-GitCommitExists $CommitSha)) {
+        return $false
+    }
+
+    $parentsLine = Invoke-GitText -Arguments @("-C", $script:RepositoryRoot, "rev-list", "--parents", "-n", "1", $CommitSha)
+    if ($parentsLine.ExitCode -ne 0) {
+        return $false
+    }
+
+    $tokens = @($parentsLine.Text.Trim() -split "\s+" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $parentCount = [Math]::Max(0, $tokens.Count - 1)
+    if ($parentCount -gt 1) {
+        return $false
+    }
+
+    $baseSha = if ($parentCount -eq 1) { [string] $tokens[1] } else { $null }
+    $record = [pscustomobject]@{
+        Path = Normalize-RepoPath $RepoPath
+        PreviousPath = Normalize-RepoPath $RepoPath
+        Config = $Config
+    }
+
+    $changeResult = Get-ManagedBodyChangeResult -Record $record -RequestedBaseSha $baseSha -RequestedHeadSha $CommitSha
+    [bool] $changeResult.bodyChanged
+}
+
 function New-MarkdownPresentation {
     param(
         [object] $Config,
@@ -1992,14 +2343,19 @@ function New-MarkdownPresentation {
     $historyLines = [System.Collections.Generic.List[string]]::new()
     $limit = if ($null -eq $Config.historyLimit) { $null } else { [int] $Config.historyLimit }
     $sourceMetadataInfo = if ($Values.ContainsKey("__sourcePresentationInfo")) { $Values["__sourcePresentationInfo"] } else { $MetadataInfo }
-    $addHistoryEntry = if ($Values.ContainsKey("__addHistoryEntry")) { [bool] $Values["__addHistoryEntry"] } else { $true }
+    $addHistoryEntry = if ($Values.ContainsKey("__addHistoryEntry")) { [bool] $Values["__addHistoryEntry"] } else { $false }
     $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    $currentChangesLine = Get-CurrentChangesLine -MetadataInfo $sourceMetadataInfo
     if ($null -eq $limit -or $limit -gt 0) {
         $updated = $Values[$Config.updatedField]
         $author = $Values[$Config.authorField]
         $historyUrl = if ($Values.ContainsKey("__historyUrl")) { [string] $Values["__historyUrl"] } else { "" }
         $historyLinkText = if ($Values.ContainsKey("__historyLinkText")) { [string] $Values["__historyLinkText"] } else { "View Commit" }
         if ($addHistoryEntry) {
+            if (-not [string]::IsNullOrWhiteSpace($historyUrl)) {
+                $currentChangesLine = "[<b>$historyLinkText</b>]($historyUrl)"
+            }
+
             $newEntry = if ([string]::IsNullOrWhiteSpace($historyUrl)) {
                 "- Updated: <b>$updated</b> | Author: <b>$author</b> | Changes: <b>Unavailable</b>"
             }
@@ -2027,6 +2383,10 @@ function New-MarkdownPresentation {
 
     $lines = [System.Collections.Generic.List[string]]::new()
     $lines.Add($script:PresentationStartMarker)
+    if (-not [string]::IsNullOrWhiteSpace($currentChangesLine)) {
+        $lines.Add($currentChangesLine)
+        $lines.Add("")
+    }
     $lines.Add("<details>")
     $lines.Add("<summary>Change History</summary>")
     $lines.Add("")
@@ -2044,6 +2404,7 @@ function New-MarkdownPresentation {
         $lines.Add("<br>")
     }
     $lines.Add($script:PresentationEndMarker)
+    $lines.Add("")
     ($lines -join $NewLine) + $NewLine
 }
 
@@ -2119,7 +2480,8 @@ function Set-MetadataContent {
 function Validate-FileMetadata {
     param(
         [object] $MetadataInfo,
-        [object] $Config
+        [object] $Config,
+        [string] $RepoPath = ""
     )
 
     $errors = [System.Collections.Generic.List[object]]::new()
@@ -2155,6 +2517,33 @@ function Validate-FileMetadata {
             Current = "missing"
             Expected = "managed metadata presentation/separator must be present"
         })
+    }
+    if ($Config.presentationEnabled -and $Config.isMarkdown -and $MetadataInfo.HasPresentation -and -not $MetadataInfo.IsPresentationMalformed) {
+        $presentationLines = @($MetadataInfo.PresentationLines)
+        $presentationText = $presentationLines -join "`n"
+        if ($presentationText -notmatch '(?s)^<!-- doc-metadata-presentation:start -->.*?<details>\n<summary>Change History</summary>.*?</details>.*?<!-- doc-metadata-presentation:end -->') {
+            $errors.Add([pscustomobject]@{
+                Rule = "managed metadata presentation"
+                Current = "malformed"
+                Expected = "managed presentation must contain complete Change History details"
+            })
+        }
+        if ($presentationLines.Count -eq 0 -or -not [string]::IsNullOrWhiteSpace($presentationLines[$presentationLines.Count - 1])) {
+            $errors.Add([pscustomobject]@{
+                Rule = "managed metadata presentation"
+                Current = "missing trailing blank line"
+                Expected = "blank physical line after doc-metadata-presentation end marker"
+            })
+        }
+        foreach ($url in @(Get-ManagedPresentationUrls -MetadataInfo $MetadataInfo)) {
+            if (-not (Test-ManagedHistoryUrl -Url $url -RepoPath $RepoPath)) {
+                $errors.Add([pscustomobject]@{
+                    Rule = "managed history URL"
+                    Current = "invalid URL: $url"
+                    Expected = "absolute GitHub commit, compare, or verified file URL for the configured repository"
+                })
+            }
+        }
     }
 
     $versionValue = if ($MetadataInfo.Fields.ContainsKey($Config.versionField)) { $MetadataInfo.Fields[$Config.versionField] } else { $null }
@@ -2345,7 +2734,8 @@ function Get-ComparisonInfo {
 function Get-HistoryLinkInfo {
     param(
         [string] $RepoPath,
-        [hashtable] $Comparison = $null
+        [hashtable] $Comparison = $null,
+        [object] $Config = $null
     )
 
     $map = $null
@@ -2358,25 +2748,77 @@ function Get-HistoryLinkInfo {
 
     $mapEntry = if ($null -ne $map) { Get-PropertyValue -Object $map -Name $RepoPath } else { $null }
     if ($null -ne $mapEntry) {
-        return @{
-            Url = [string] (Get-PropertyValue -Object $mapEntry -Name "url")
-            LinkText = [string] (Get-PropertyValue -Object $mapEntry -Name "linkText")
+        $entryPath = Get-PropertyValue -Object $mapEntry -Name "path"
+        if ($null -eq $entryPath -or (Normalize-RepoPath ([string] $entryPath)) -ne (Normalize-RepoPath $RepoPath)) {
+            return @{
+                Url = ""
+                LinkText = "View Commit"
+                HasReliableContext = $false
+                Reason = "link map path does not match governed file path"
+            }
         }
-    }
 
-    $head = if ($null -ne $Comparison -and -not [string]::IsNullOrWhiteSpace($Comparison.headSha)) { $Comparison.headSha } else { $HeadSha }
-    $repository = $env:GITHUB_REPOSITORY
-    $server = if ([string]::IsNullOrWhiteSpace($env:GITHUB_SERVER_URL)) { "https://github.com" } else { $env:GITHUB_SERVER_URL.TrimEnd("/") }
-    if (-not [string]::IsNullOrWhiteSpace($repository) -and -not [string]::IsNullOrWhiteSpace($head) -and $head -match "^[0-9a-fA-F]{40}$") {
+        $url = [string] (Get-PropertyValue -Object $mapEntry -Name "url")
+        if (-not (Test-ManagedHistoryUrl -Url $url -RepoPath $RepoPath)) {
+            return @{
+                Url = ""
+                LinkText = "View Commit"
+                HasReliableContext = $false
+                Reason = "link map URL is not a safe managed history URL"
+            }
+        }
+
+        $urlParts = Get-ManagedHistoryUrlParts -Url $url
+        if ($null -eq $urlParts -or $urlParts.Kind -ne "commit") {
+            return @{
+                Url = ""
+                LinkText = "View Commit"
+                HasReliableContext = $false
+                Reason = "link map URL is not a proven commit fallback URL"
+            }
+        }
+
+        $commitSha = [string] (Get-PropertyValue -Object $mapEntry -Name "commitSha")
+        if ([string]::IsNullOrWhiteSpace($commitSha) -or $commitSha -notmatch "^[0-9a-fA-F]{40}$" -or -not $commitSha.Equals($urlParts.CommitSha, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return @{
+                Url = ""
+                LinkText = "View Commit"
+                HasReliableContext = $false
+                Reason = "link map commitSha does not match commit URL"
+            }
+        }
+
+        if (-not (Test-TrueValue (Get-PropertyValue -Object $mapEntry -Name "bodyChanged"))) {
+            return @{
+                Url = ""
+                LinkText = "View Commit"
+                HasReliableContext = $false
+                Reason = "link map entry does not prove a managed body change"
+            }
+        }
+
+        if ($null -eq $Config -or -not (Test-CommitManagedBodyChanged -RepoPath $RepoPath -Config $Config -CommitSha $commitSha)) {
+            return @{
+                Url = ""
+                LinkText = "View Commit"
+                HasReliableContext = $false
+                Reason = "link map commit does not change the governed file's managed body"
+            }
+        }
+
         return @{
-            Url = "$server/$repository/commit/$head"
+            Url = $url
             LinkText = "View Commit"
+            HasReliableContext = $true
+            Reason = "validated link map entry"
         }
     }
 
     @{
         Url = ""
         LinkText = "View Commit"
+        HasReliableContext = $false
+        Reason = "no validated content-change link map entry"
     }
 }
 
@@ -2522,11 +2964,11 @@ function Initialize-OrUpdateFile {
     $previousInfo = if ($null -ne $previousContent) { Get-MetadataInfo -Content $previousContent -Config $config } else { $null }
     $previousSnapshot = if ($null -ne $previousInfo) { Get-MetadataSnapshot -MetadataInfo $previousInfo -Config $config } else { $null }
 
-    $bodyChanged = if ($null -ne $previousInfo) { $currentInfo.Body -ne $previousInfo.Body } else { $false }
+    $bodyChanged = if ($null -ne $previousInfo) { (ConvertTo-ComparableBody $currentInfo.Body) -ne (ConvertTo-ComparableBody $previousInfo.Body) } else { $false }
     $now = ConvertTo-TimestampValue
 
     if ($currentInfo.HasMetadata -and -not $currentInfo.IsMalformed) {
-        [object[]] $metadataValidationErrors = @(Validate-FileMetadata -MetadataInfo $currentInfo -Config $config)
+        [object[]] $metadataValidationErrors = @(Validate-FileMetadata -MetadataInfo $currentInfo -Config $config -RepoPath $repoPath)
         [object[]] $invalidVersionErrors = @($metadataValidationErrors | Where-Object { $_.Rule -eq $config.versionField -and $null -ne $_.Current })
         if ($invalidVersionErrors.Count -gt 0) {
             foreach ($error in $invalidVersionErrors) {
@@ -2565,7 +3007,9 @@ function Initialize-OrUpdateFile {
             $initialUpdated = ConvertTo-UtcTimestampValue $initialUpdated
         }
         $author = Resolve-DocumentAuthor -RepoPath $repoPath -Comparison $Comparison
-        $linkInfo = Get-HistoryLinkInfo -RepoPath $repoPath -Comparison $Comparison
+        $linkInfo = Get-HistoryLinkInfo -RepoPath $repoPath -Comparison $Comparison -Config $config
+        $hasNewContentReference = $null -eq $previousContent -and $null -ne $Comparison -and $Comparison.staleCheckAvailable -and $linkInfo.HasReliableContext
+        $addHistoryEntry = ($bodyChanged -or $hasNewContentReference) -and $linkInfo.HasReliableContext
 
         $values = @{
             $config.versionField = $initialVersion
@@ -2574,6 +3018,7 @@ function Initialize-OrUpdateFile {
             $config.authorField = $author
             "__historyUrl" = $linkInfo.Url
             "__historyLinkText" = $linkInfo.LinkText
+            "__addHistoryEntry" = $addHistoryEntry
         }
         $newContent = Set-MetadataContent -Content $textFile.Content -Config $config -Values $values -NewLine $textFile.NewLine
         if ($PSCmdlet.ShouldProcess($repoPath, "Initialize document metadata")) {
@@ -2583,7 +3028,7 @@ function Initialize-OrUpdateFile {
         return
     }
 
-    [object[]] $validationErrors = @(Validate-FileMetadata -MetadataInfo $currentInfo -Config $config)
+    [object[]] $validationErrors = @(Validate-FileMetadata -MetadataInfo $currentInfo -Config $config -RepoPath $repoPath)
     [object[]] $presentationErrors = @($validationErrors | Where-Object { $_.Rule -eq "managed metadata presentation" })
     if (@($presentationErrors | Where-Object { $_.Current -eq "malformed" }).Count -gt 0 -and ($null -eq $previousInfo -or -not $previousInfo.HasPresentation -or $previousInfo.IsPresentationMalformed)) {
         Add-FailedFile -Report $Report -Path $repoPath -Rule "managed metadata presentation" -Current "malformed" -Expected "trusted previous generated presentation for safe restoration"
@@ -2610,21 +3055,34 @@ function Initialize-OrUpdateFile {
     $reason = $null
     $shouldWrite = $false
     [object[]] $timestampValidationErrors = @($validationErrors | Where-Object { $_.Rule -in @($config.createdField, $config.updatedField) })
+    [object[]] $urlValidationErrors = @($validationErrors | Where-Object { $_.Rule -eq "managed history URL" })
     $hasManualVersionIncrease = $null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and $null -ne $currentSnapshot.Version -and (Compare-VersionValue $currentSnapshot.Version $previousSnapshot.Version) -gt 0
     $hasValidPreviousTimestamps = $null -ne $previousSnapshot -and (Test-IsTimestamp $previousSnapshot.Created) -and (Test-IsTimestamp $previousSnapshot.Updated)
+    $hasValidPreviousMetadata = $hasValidPreviousTimestamps -and $null -ne $previousSnapshot.Version -and -not [string]::IsNullOrWhiteSpace([string] $previousSnapshot.Author)
     $hasTimestampDriftFromPrevious = $null -ne $previousSnapshot -and ((-not (Test-TimestampEquivalent $currentSnapshot.Created $previousSnapshot.Created)) -or (-not (Test-TimestampEquivalent $currentSnapshot.Updated $previousSnapshot.Updated)))
     $hasAuthorDriftFromPrevious = $null -ne $previousSnapshot -and $null -ne $previousSnapshot.Author -and $currentSnapshot.Author -ne $previousSnapshot.Author
-    $hasPresentationDriftFromPrevious = $null -ne $previousInfo -and $currentInfo.HasPresentation -and $previousInfo.HasPresentation -and -not (Test-PresentationEquivalent $currentInfo $previousInfo)
+    $hasPresentationDriftFromPrevious = $null -ne $previousInfo -and $currentInfo.HasPresentation -and $previousInfo.HasPresentation -and -not (Test-ManagedHistoryEquivalent -Left $currentInfo -Right $previousInfo -RepoPath $repoPath -Config $config)
+    $canRestoreMissingPresentation = $null -ne $previousInfo -and -not $currentInfo.HasPresentation -and $previousInfo.HasPresentation -and -not $previousInfo.IsPresentationMalformed
+    $canRestoreUrlFromPrevious = $null -ne $previousInfo -and $previousInfo.HasPresentation -and -not $previousInfo.IsPresentationMalformed -and (Test-ManagedPresentationUrls -MetadataInfo $previousInfo -RepoPath $repoPath)
+    [object[]] $metadataFieldValidationErrors = @($validationErrors | Where-Object { $_.Rule -in @($config.versionField, $config.createdField, $config.updatedField, $config.authorField) })
+    [object[]] $presentationValidationErrors = @($validationErrors | Where-Object { $_.Rule -eq "managed metadata presentation" })
+
+    if ($urlValidationErrors.Count -gt 0 -and -not $canRestoreUrlFromPrevious) {
+        foreach ($error in $urlValidationErrors) {
+            Add-FailedFile -Report $Report -Path $repoPath -Rule $error.Rule -Current $error.Current -Expected $error.Expected
+        }
+        return
+    }
 
     if ($ModeValue -eq "Update" -and -not $bodyChanged -and ($timestampValidationErrors.Count -gt 0 -or $hasTimestampDriftFromPrevious -or $hasAuthorDriftFromPrevious -or $hasPresentationDriftFromPrevious)) {
-        if (-not $hasValidPreviousTimestamps) {
+        if (-not $hasValidPreviousMetadata) {
             Add-FailedFile -Report $Report -Path $repoPath -Rule "created/updated timestamp drift could not be safely restored" -Current "created=$($currentSnapshot.Created); updated=$($currentSnapshot.Updated)" -Expected "valid previous committed created and updated timestamps"
             return
         }
 
         $newCreated = $previousSnapshot.Created
         $newUpdated = $previousSnapshot.Updated
-        $newAuthor = if ($null -ne $previousSnapshot.Author) { $previousSnapshot.Author } else { $currentSnapshot.Author }
+        $newAuthor = $previousSnapshot.Author
         $reasonParts = [System.Collections.Generic.List[string]]::new()
         $reasonParts.Add("metadata repaired")
         if ($hasManualVersionIncrease) { $reasonParts.Add("manual version rebaseline") }
@@ -2633,6 +3091,11 @@ function Initialize-OrUpdateFile {
         $shouldWrite = $true
     }
     elseif ($bodyChanged) {
+        $baselineVersion = if ($null -ne $currentSnapshot.Version) { $currentSnapshot.Version } elseif ($null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version) { $previousSnapshot.Version } else { $null }
+        if ($null -eq $baselineVersion) {
+            Add-FailedFile -Report $Report -Path $repoPath -Rule $config.versionField -Current $currentSnapshot.Version -Expected "valid Version or safely restorable previous Version"
+            return
+        }
         if (-not (Test-IsTimestamp $newCreated)) {
             if ($hasValidPreviousTimestamps) {
                 $newCreated = $previousSnapshot.Created
@@ -2643,7 +3106,7 @@ function Initialize-OrUpdateFile {
             }
         }
 
-        $newVersion = Get-IncrementedVersion $currentSnapshot.Version
+        $newVersion = Get-IncrementedVersion $baselineVersion
         $newUpdated = $now
         $newAuthor = Resolve-DocumentAuthor -RepoPath $repoPath -Comparison $Comparison
         $reason = if ($validationErrors.Count -gt 0 -or $hasPresentationDriftFromPrevious) { "body changed; metadata repaired" } else { "body changed" }
@@ -2653,18 +3116,27 @@ function Initialize-OrUpdateFile {
         $shouldWrite = $true
     }
     elseif ($validationErrors.Count -gt 0) {
-        if ($null -eq $newVersion) {
-            $newVersion = 1
+        if ($metadataFieldValidationErrors.Count -gt 0) {
+            if (-not $hasValidPreviousMetadata) {
+                Add-FailedFile -Report $Report -Path $repoPath -Rule "managed metadata fields" -Current "invalid or incomplete" -Expected "valid current fields or trusted previous metadata for safe restoration"
+                return
+            }
+
+            $newVersion = $previousSnapshot.Version
+            $newCreated = $previousSnapshot.Created
+            $newUpdated = $previousSnapshot.Updated
+            $newAuthor = $previousSnapshot.Author
+            $reason = "metadata repaired from trusted previous metadata"
+            $shouldWrite = $true
         }
-        if (-not (Test-IsTimestamp $newCreated)) {
-            $newCreated = $now
+        elseif ($presentationValidationErrors.Count -gt 0) {
+            $reason = if ($canRestoreMissingPresentation) { "metadata presentation restored from trusted previous" } else { "metadata presentation repaired" }
+            $shouldWrite = $true
         }
-        if (-not (Test-IsTimestamp $newUpdated)) {
-            $newUpdated = $now
+        else {
+            Add-FailedFile -Report $Report -Path $repoPath -Rule "managed metadata" -Current "invalid" -Expected "safely repairable metadata state"
+            return
         }
-        $newAuthor = if ([string]::IsNullOrWhiteSpace([string] $currentSnapshot.Author)) { Resolve-DocumentAuthor -RepoPath $repoPath -Comparison $Comparison } else { $currentSnapshot.Author }
-        $reason = "metadata repaired"
-        $shouldWrite = $true
     }
     elseif ($hasManualVersionIncrease) {
         Add-UnchangedFile -Report $Report -Path $repoPath -Reason "manual version rebaseline" -OldVersion $previousSnapshot.Version -NewVersion $currentSnapshot.Version
@@ -2687,7 +3159,7 @@ function Initialize-OrUpdateFile {
         if (Test-IsTimestamp $newUpdated) {
             $newUpdated = ConvertTo-UtcTimestampValue $newUpdated
         }
-        $linkInfo = Get-HistoryLinkInfo -RepoPath $repoPath -Comparison $Comparison
+        $linkInfo = Get-HistoryLinkInfo -RepoPath $repoPath -Comparison $Comparison -Config $config
         $values = @{
             $config.versionField = $newVersion
             $config.createdField = $newCreated
@@ -2695,8 +3167,8 @@ function Initialize-OrUpdateFile {
             $config.authorField = $newAuthor
             "__historyUrl" = $linkInfo.Url
             "__historyLinkText" = $linkInfo.LinkText
-            "__sourcePresentationInfo" = if ($hasPresentationDriftFromPrevious) { $previousInfo } else { $currentInfo }
-            "__addHistoryEntry" = $bodyChanged -or -not $currentInfo.HasPresentation
+            "__sourcePresentationInfo" = if ($hasPresentationDriftFromPrevious -or $canRestoreMissingPresentation) { $previousInfo } else { $currentInfo }
+            "__addHistoryEntry" = ($bodyChanged -and $linkInfo.HasReliableContext)
         }
         $newContent = Set-MetadataContent -Content $textFile.Content -Config $config -Values $values -NewLine $textFile.NewLine
         if ($PSCmdlet.ShouldProcess($repoPath, "Update document metadata")) {
@@ -2733,7 +3205,7 @@ function Analyze-GovernedFile {
     $previousContent = if ($Comparison.staleCheckAvailable) { Get-GitFileContent -Revision $Comparison.baseSha -RepoPath $repoPath } else { $null }
     $previousInfo = if ($null -ne $previousContent) { Get-MetadataInfo -Content $previousContent -Config $config } else { $null }
     $previousSnapshot = if ($null -ne $previousInfo) { Get-MetadataSnapshot -MetadataInfo $previousInfo -Config $config } else { $null }
-    $bodyChanged = if ($null -ne $previousInfo) { $currentInfo.Body -ne $previousInfo.Body } else { $false }
+    $bodyChanged = if ($null -ne $previousInfo) { (ConvertTo-ComparableBody $currentInfo.Body) -ne (ConvertTo-ComparableBody $previousInfo.Body) } else { $false }
     $hasValidPreviousMetadata = $null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and (Test-IsTimestamp $previousSnapshot.Created) -and (Test-IsTimestamp $previousSnapshot.Updated) -and -not [string]::IsNullOrWhiteSpace([string] $previousSnapshot.Author)
 
     if (-not $Comparison.staleCheckAvailable) {
@@ -2761,7 +3233,7 @@ function Analyze-GovernedFile {
         return
     }
 
-    [object[]] $validationErrors = @(Validate-FileMetadata -MetadataInfo $currentInfo -Config $config)
+    [object[]] $validationErrors = @(Validate-FileMetadata -MetadataInfo $currentInfo -Config $config -RepoPath $repoPath)
     [object[]] $presentationErrors = @($validationErrors | Where-Object { $_.Rule -eq "managed metadata presentation" })
     if (@($presentationErrors | Where-Object { $_.Current -eq "malformed" }).Count -gt 0 -and ($null -eq $previousInfo -or -not $previousInfo.HasPresentation -or $previousInfo.IsPresentationMalformed)) {
         Add-UnrecoverableFile -Report $Report -Path $repoPath -Reason "malformed managed presentation cannot be safely restored" -Current "malformed" -Expected "trusted previous generated presentation"
@@ -2785,12 +3257,30 @@ function Analyze-GovernedFile {
     }
 
     [object[]] $timestampErrors = @($validationErrors | Where-Object { $_.Rule -in @($config.createdField, $config.updatedField) })
+    [object[]] $metadataFieldValidationErrors = @($validationErrors | Where-Object { $_.Rule -in @($config.versionField, $config.createdField, $config.updatedField, $config.authorField) })
+    [object[]] $presentationValidationErrors = @($validationErrors | Where-Object { $_.Rule -eq "managed metadata presentation" })
+    [object[]] $urlValidationErrors = @($validationErrors | Where-Object { $_.Rule -eq "managed history URL" })
     $hasManualVersionIncrease = $null -ne $previousSnapshot -and $null -ne $previousSnapshot.Version -and $null -ne $currentSnapshot.Version -and (Compare-VersionValue $currentSnapshot.Version $previousSnapshot.Version) -gt 0
     $hasTimestampDriftFromPrevious = $null -ne $previousSnapshot -and ((-not (Test-TimestampEquivalent $currentSnapshot.Created $previousSnapshot.Created)) -or (-not (Test-TimestampEquivalent $currentSnapshot.Updated $previousSnapshot.Updated)))
     $hasAuthorDriftFromPrevious = $null -ne $previousSnapshot -and $null -ne $previousSnapshot.Author -and $currentSnapshot.Author -ne $previousSnapshot.Author
-    $hasPresentationDriftFromPrevious = $null -ne $previousInfo -and $currentInfo.HasPresentation -and $previousInfo.HasPresentation -and -not (Test-PresentationEquivalent $currentInfo $previousInfo)
+    $hasPresentationDriftFromPrevious = $null -ne $previousInfo -and $currentInfo.HasPresentation -and $previousInfo.HasPresentation -and -not (Test-ManagedHistoryEquivalent -Left $currentInfo -Right $previousInfo -RepoPath $repoPath -Config $config)
+    $canRestoreMissingPresentation = $null -ne $previousInfo -and -not $currentInfo.HasPresentation -and $previousInfo.HasPresentation -and -not $previousInfo.IsPresentationMalformed
+    $canRestoreUrlFromPrevious = $null -ne $previousInfo -and $previousInfo.HasPresentation -and -not $previousInfo.IsPresentationMalformed -and (Test-ManagedPresentationUrls -MetadataInfo $previousInfo -RepoPath $repoPath)
+
+    if ($urlValidationErrors.Count -gt 0 -and -not $canRestoreUrlFromPrevious) {
+        foreach ($error in $urlValidationErrors) {
+            Add-UnrecoverableFile -Report $Report -Path $repoPath -Reason "managed history URL is not safely repairable" -Current $error.Current -Expected $error.Expected
+            Add-FailedFile -Report $Report -Path $repoPath -Rule $error.Rule -Current $error.Current -Expected $error.Expected
+        }
+        return
+    }
 
     if ($bodyChanged) {
+        if ($null -eq $currentSnapshot.Version -and ($null -eq $previousSnapshot -or $null -eq $previousSnapshot.Version)) {
+            Add-UnrecoverableFile -Report $Report -Path $repoPath -Reason "body changed but Version cannot be safely restored" -Current $currentSnapshot.Version -Expected "valid Version or valid previous metadata"
+            Add-FailedFile -Report $Report -Path $repoPath -Rule $config.versionField -Current $currentSnapshot.Version -Expected "valid Version or safely restorable previous Version"
+            return
+        }
         if ($timestampErrors.Count -gt 0 -and -not $hasValidPreviousMetadata -and -not (Test-IsTimestamp $currentSnapshot.Created)) {
             Add-UnrecoverableFile -Report $Report -Path $repoPath -Reason "body changed but created timestamp cannot be safely restored" -Current $currentSnapshot.Created -Expected "valid created timestamp or valid previous metadata"
             Add-FailedFile -Report $Report -Path $repoPath -Rule $config.createdField -Current $currentSnapshot.Created -Expected "valid created timestamp or safely restorable previous created timestamp"
@@ -2804,11 +3294,6 @@ function Analyze-GovernedFile {
             $reason = "body changed; metadata repaired"
         }
         Add-RepairableFile -Report $Report -Path $repoPath -Reason $reason -Categories $categories
-        return
-    }
-
-    if ($timestampErrors.Count -gt 0 -and -not $hasTimestampDriftFromPrevious) {
-        Add-RepairableFile -Report $Report -Path $repoPath -Reason "metadata fields can be repaired" -Categories @("repaired")
         return
     }
 
@@ -2830,13 +3315,29 @@ function Analyze-GovernedFile {
         return
     }
 
-    if ($hasManualVersionIncrease) {
-        Add-UnchangedFile -Report $Report -Path $repoPath -Reason "manual version rebaseline" -OldVersion $previousSnapshot.Version -NewVersion $currentSnapshot.Version
+    if ($metadataFieldValidationErrors.Count -gt 0) {
+        if ($hasValidPreviousMetadata) {
+            Add-RepairableFile -Report $Report -Path $repoPath -Reason "metadata fields can be restored from trusted previous metadata" -Categories @("restoredFromHistory", "repaired")
+            return
+        }
+
+        Add-UnrecoverableFile -Report $Report -Path $repoPath -Reason "metadata fields cannot be safely repaired" -Current "invalid or incomplete" -Expected "valid current fields or trusted previous metadata"
+        Add-FailedFile -Report $Report -Path $repoPath -Rule "managed metadata fields" -Current "invalid or incomplete" -Expected "valid current fields or trusted previous metadata for safe restoration"
         return
     }
 
-    if ($validationErrors.Count -gt 0) {
-        Add-RepairableFile -Report $Report -Path $repoPath -Reason "metadata fields can be repaired" -Categories @("repaired")
+    if ($presentationValidationErrors.Count -gt 0) {
+        if ($canRestoreMissingPresentation) {
+            Add-RepairableFile -Report $Report -Path $repoPath -Reason "metadata presentation can be restored from trusted previous" -Categories @("restoredFromHistory", "repaired")
+        }
+        else {
+            Add-RepairableFile -Report $Report -Path $repoPath -Reason "metadata presentation can be repaired" -Categories @("repaired")
+        }
+        return
+    }
+
+    if ($hasManualVersionIncrease) {
+        Add-UnchangedFile -Report $Report -Path $repoPath -Reason "manual version rebaseline" -OldVersion $previousSnapshot.Version -NewVersion $currentSnapshot.Version
         return
     }
 
@@ -2866,7 +3367,7 @@ function Test-GovernedFile {
     }
 
     $currentInfo = Get-MetadataInfo -Content $textFile.Content -Config $config
-    [object[]] $errors = @(Validate-FileMetadata -MetadataInfo $currentInfo -Config $config)
+    [object[]] $errors = @(Validate-FileMetadata -MetadataInfo $currentInfo -Config $config -RepoPath $repoPath)
     foreach ($error in $errors) {
         Add-FailedFile -Report $Report -Path $repoPath -Rule $error.Rule -Current $error.Current -Expected $error.Expected
     }
@@ -2895,22 +3396,23 @@ function Test-GovernedFile {
         return
     }
 
-    $bodyChanged = $currentInfo.Body -ne $previousInfo.Body
+    $bodyChanged = (ConvertTo-ComparableBody $currentInfo.Body) -ne (ConvertTo-ComparableBody $previousInfo.Body)
     if (-not $bodyChanged) {
         Add-StaleSkippedFile -Report $Report -Path $repoPath -Reason "no body change"
-        if ($null -ne $previousSnapshot.Created -and -not (Test-TimestampEquivalent $currentSnapshot.Created $previousSnapshot.Created)) {
+        $previousHadMetadata = $previousInfo.HasMetadata -and -not $previousInfo.IsMalformed
+        if ($previousHadMetadata -and $null -ne $previousSnapshot.Created -and -not (Test-TimestampEquivalent $currentSnapshot.Created $previousSnapshot.Created)) {
             Add-FailedFile -Report $Report -Path $repoPath -Rule $config.createdField -Current $currentSnapshot.Created -Expected "unchanged when body content did not change"
             return
         }
-        if ($null -ne $previousSnapshot.Updated -and -not (Test-TimestampEquivalent $currentSnapshot.Updated $previousSnapshot.Updated)) {
+        if ($previousHadMetadata -and $null -ne $previousSnapshot.Updated -and -not (Test-TimestampEquivalent $currentSnapshot.Updated $previousSnapshot.Updated)) {
             Add-FailedFile -Report $Report -Path $repoPath -Rule $config.updatedField -Current $currentSnapshot.Updated -Expected "unchanged when body content did not change"
             return
         }
-        if ($null -ne $previousSnapshot.Author -and $currentSnapshot.Author -ne $previousSnapshot.Author) {
+        if ($previousHadMetadata -and $null -ne $previousSnapshot.Author -and $currentSnapshot.Author -ne $previousSnapshot.Author) {
             Add-FailedFile -Report $Report -Path $repoPath -Rule $config.authorField -Current $currentSnapshot.Author -Expected "unchanged when body content did not change"
             return
         }
-        if ($currentInfo.HasPresentation -and $previousInfo.HasPresentation -and -not (Test-PresentationEquivalent $currentInfo $previousInfo)) {
+        if ($previousHadMetadata -and $currentInfo.HasPresentation -and $previousInfo.HasPresentation -and -not (Test-ManagedHistoryEquivalent -Left $currentInfo -Right $previousInfo -RepoPath $repoPath -Config $config)) {
             Add-FailedFile -Report $Report -Path $repoPath -Rule "managed history integrity" -Current "generated presentation changed" -Expected "unchanged generated presentation when body content did not change"
             return
         }
@@ -2934,6 +3436,70 @@ function Test-GovernedFile {
     }
 
     Add-UnchangedFile -Report $Report -Path $repoPath -Reason "metadata valid"
+}
+
+function Get-ManagedBodyAtRevision {
+    param(
+        [string] $Revision,
+        [string] $RepoPath,
+        [object] $Config
+    )
+
+    $content = Get-GitFileContent -Revision $Revision -RepoPath $RepoPath
+    if ($null -eq $content) {
+        return [pscustomobject]@{
+            Exists = $false
+            Body = $null
+        }
+    }
+
+    $info = Get-MetadataInfo -Content $content -Config $Config
+    [pscustomobject]@{
+        Exists = $true
+        Body = ConvertTo-ComparableBody $info.Body
+    }
+}
+
+function Get-ManagedBodyChangeResult {
+    param(
+        [object] $Record,
+        [string] $RequestedBaseSha,
+        [string] $RequestedHeadSha
+    )
+
+    $repoPath = $Record.Path
+    if ([string]::IsNullOrWhiteSpace($RequestedHeadSha) -or -not (Test-GitCommitExists $RequestedHeadSha)) {
+        throw "Head SHA '$RequestedHeadSha' is not fetchable in the local checkout."
+    }
+    if (-not [string]::IsNullOrWhiteSpace($RequestedBaseSha) -and -not (Test-GitCommitExists $RequestedBaseSha)) {
+        throw "Base SHA '$RequestedBaseSha' is not fetchable in the local checkout."
+    }
+
+    $headState = Get-ManagedBodyAtRevision -Revision $RequestedHeadSha -RepoPath $repoPath -Config $Record.Config
+    $baseState = if ([string]::IsNullOrWhiteSpace($RequestedBaseSha)) {
+        [pscustomobject]@{ Exists = $false; Body = $null }
+    }
+    else {
+        Get-ManagedBodyAtRevision -Revision $RequestedBaseSha -RepoPath $Record.PreviousPath -Config $Record.Config
+    }
+
+    $bodyChanged = $false
+    if ($headState.Exists -and -not $baseState.Exists) {
+        $bodyChanged = $true
+    }
+    elseif ($headState.Exists -and $baseState.Exists) {
+        $bodyChanged = $headState.Body -ne $baseState.Body
+    }
+
+    [ordered]@{
+        path = $repoPath
+        baseSha = if ([string]::IsNullOrWhiteSpace($RequestedBaseSha)) { $null } else { $RequestedBaseSha }
+        headSha = $RequestedHeadSha
+        baseExists = $baseState.Exists
+        headExists = $headState.Exists
+        newFile = ($headState.Exists -and -not $baseState.Exists)
+        bodyChanged = $bodyChanged
+    }
 }
 
 function Complete-Report {
@@ -3227,6 +3793,16 @@ function Write-MachineReports {
             changedFiles = @($Report.updatedFiles | ForEach-Object { $_.path })
         } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $changedFullPath -Encoding utf8NoBOM
     }
+
+    if (-not [string]::IsNullOrWhiteSpace($ContentChangeOutputPath)) {
+        $contentChangeFullPath = Resolve-InRootPath -RootPath $script:RepositoryRoot -InputPath $ContentChangeOutputPath
+        if ($null -eq $contentChangeFullPath) {
+            throw "ContentChangeOutputPath must be inside the repository root."
+        }
+        [ordered]@{
+            contentChanges = @($Report.contentChanges)
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $contentChangeFullPath -Encoding utf8NoBOM
+    }
 }
 
 function Invoke-Main {
@@ -3246,7 +3822,23 @@ function Invoke-Main {
         $bootstrapPatterns = if ($Mode -eq "Bootstrap" -and $includeValues.Length -gt 0) { $includeValues } else { @() }
         $governedFiles = Resolve-GovernedFiles -Manifest $manifest -BootstrapIncludePatterns $bootstrapPatterns -Report $report
 
-        if ($Mode -eq "Analyze") {
+        if ($Mode -eq "ContentChanges") {
+            $report.comparison = @{
+                mode = "content-change"
+                baseSha = if ([string]::IsNullOrWhiteSpace($BaseSha)) { $null } else { $BaseSha }
+                headSha = $HeadSha
+                staleCheckAvailable = -not [string]::IsNullOrWhiteSpace($HeadSha)
+                reason = "Classifying managed body changes for explicit content-change references."
+            }
+            $selected = @(Get-SelectedGovernedRecords -Manifest $manifest -GovernedFiles $governedFiles -Report $report -ModeValue $Mode)
+            foreach ($record in $selected) {
+                $result = Get-ManagedBodyChangeResult -Record $record -RequestedBaseSha $BaseSha -RequestedHeadSha $HeadSha
+                $report.contentChanges.Add($result)
+                Add-UnchangedFile -Report $report -Path $record.Path -Reason "content body changed=$($result.bodyChanged)"
+            }
+            Complete-Report -Report $report -TotalGovernedConsidered $selected.Count -TotalGovernedValidated $selected.Count
+        }
+        elseif ($Mode -eq "Analyze") {
             $comparison = Get-ComparisonInfo -RequestedEventName $EventName -RequestedEventPayloadPath $EventPayloadPath -RequestedHeadSha $HeadSha -RequestedBaseSha $BaseSha
             $report.comparison = $comparison
             $selected = @($governedFiles.Values | Sort-Object -Property Path)
@@ -3266,7 +3858,7 @@ function Invoke-Main {
         }
         else {
             $repairComparison = $null
-            if ($Mode -eq "Update" -and (-not [string]::IsNullOrWhiteSpace($EventName))) {
+            if ($Mode -eq "Update" -and ((-not [string]::IsNullOrWhiteSpace($EventName)) -or ((-not [string]::IsNullOrWhiteSpace($BaseSha)) -and (-not [string]::IsNullOrWhiteSpace($HeadSha))))) {
                 $repairComparison = Get-ComparisonInfo -RequestedEventName $EventName -RequestedEventPayloadPath $EventPayloadPath -RequestedHeadSha $HeadSha -RequestedBaseSha $BaseSha
                 $report.comparison = $repairComparison
             }

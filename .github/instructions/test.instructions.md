@@ -1,14 +1,13 @@
 ---
+Version: 1
 Created: 2026-05-25T23:40:37+00:00
 Updated: 2026-05-26T19:08:33+00:00
-Version: 1
 Author: BionicCode
 ---
 <!-- doc-metadata-presentation:start -->
 <details>
 <summary>Change History</summary>
 
-- Updated: <b>2026-05-26T19:08:33+00:00</b> | Author: <b>BionicCode</b> | Changes: <b>Unavailable</b>
 
 </details>
 
@@ -17,6 +16,7 @@ Author: BionicCode
 <br>
 <br>
 <!-- doc-metadata-presentation:end -->
+
 Follow the repository-wide engineering and validation standards defined in the root [AGENTS.md](../../test/AGENTS.md).
 Treat that AGENTS.md as the source of truth.
 The current file is based on that AGENTS.md the root folder "test" and may get outdated.
