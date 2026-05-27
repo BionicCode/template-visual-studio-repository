@@ -39,7 +39,8 @@ $script:ManagedFields = @("Version", "Created", "Updated", "Author")
 $script:PresentationStartMarker = "<!-- doc-metadata-presentation:start -->"
 $script:PresentationEndMarker = "<!-- doc-metadata-presentation:end -->"
 $script:PlainTextSeparator = "-" * 80
-$script:CurrentChangesLinkPattern = '^\s*\[<b>(?:View Changes|View Commit)</b>\]\((?<url>[^)]+)\)\s*$'
+$script:ManagedHistoryLinkPattern = '\[<b>(?<label>View Changes|View Commit)</b>\]\((?<url>[^)]+)\)'
+$script:CurrentChangesLinkPattern = "^\s*$script:ManagedHistoryLinkPattern\s*$"
 $script:TimestampPattern = "^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?[+-]\d{2}:\d{2}$"
 $script:RemediationCommand = "pwsh ./.github/scripts/doc-metadata/update-doc-metadata.ps1 -Mode Update -Root ."
 $script:DefaultAllowedDocumentExtensions = @(".md", ".markdown", ".txt")
@@ -2057,10 +2058,6 @@ function Test-ManagedHistoryUrl {
         return $segments.Count -eq 4 -and $segments[3] -match "^[0-9a-fA-F]{40}$"
     }
 
-    if ($kind -eq "compare") {
-        return $segments.Count -ge 4 -and -not [string]::IsNullOrWhiteSpace($segments[3])
-    }
-
     $false
 }
 
@@ -2088,31 +2085,70 @@ function Get-ManagedHistoryUrlParts {
     }
 }
 
-function Get-ManagedPresentationUrls {
+function Get-ManagedPresentationLinks {
     param([object] $MetadataInfo)
 
-    $urls = [System.Collections.Generic.List[string]]::new()
+    $links = [System.Collections.Generic.List[object]]::new()
     if ($null -eq $MetadataInfo -or -not $MetadataInfo.HasPresentation -or $MetadataInfo.IsPresentationMalformed) {
-        return $urls.ToArray()
+        return $links.ToArray()
     }
 
     foreach ($line in @($MetadataInfo.PresentationLines)) {
-        foreach ($match in [regex]::Matches($line, '\[<b>(?:View Changes|View Commit)</b>\]\((?<url>[^)]+)\)')) {
-            $urls.Add($match.Groups["url"].Value)
+        foreach ($match in [regex]::Matches($line, $script:ManagedHistoryLinkPattern)) {
+            $links.Add([pscustomobject]@{
+                Label = $match.Groups["label"].Value
+                Url = $match.Groups["url"].Value
+                Line = $line
+            })
         }
     }
 
-    $urls.ToArray()
+    $links.ToArray()
+}
+
+function Test-ManagedPresentationLink {
+    param(
+        [object] $Link,
+        [string] $RepoPath,
+        [object] $Config
+    )
+
+    if ($null -eq $Link) {
+        return $false
+    }
+
+    $label = [string] (Get-PropertyValue -Object $Link -Name "Label")
+    $url = [string] (Get-PropertyValue -Object $Link -Name "Url")
+
+    if (-not $label.Equals("View Commit", [System.StringComparison]::Ordinal)) {
+        return $false
+    }
+
+    if (-not (Test-ManagedHistoryUrl -Url $url -RepoPath $RepoPath)) {
+        return $false
+    }
+
+    $urlParts = Get-ManagedHistoryUrlParts -Url $url
+    if ($null -eq $urlParts -or $urlParts.Kind -ne "commit" -or [string]::IsNullOrWhiteSpace($urlParts.CommitSha)) {
+        return $false
+    }
+
+    if ([string]::IsNullOrWhiteSpace($RepoPath) -or $null -eq $Config) {
+        return $false
+    }
+
+    Test-CommitManagedBodyChanged -RepoPath $RepoPath -Config $Config -CommitSha $urlParts.CommitSha
 }
 
 function Test-ManagedPresentationUrls {
     param(
         [object] $MetadataInfo,
-        [string] $RepoPath
+        [string] $RepoPath,
+        [object] $Config
     )
 
-    foreach ($url in @(Get-ManagedPresentationUrls -MetadataInfo $MetadataInfo)) {
-        if (-not (Test-ManagedHistoryUrl -Url $url -RepoPath $RepoPath)) {
+    foreach ($link in @(Get-ManagedPresentationLinks -MetadataInfo $MetadataInfo)) {
+        if (-not (Test-ManagedPresentationLink -Link $link -RepoPath $RepoPath -Config $Config)) {
             return $false
         }
     }
@@ -2135,57 +2171,19 @@ function Test-ManagedHistoryLineIsUnproven {
         return $true
     }
 
-    $matches = [regex]::Matches($Line, '\[<b>(?:View Changes|View Commit)</b>\]\((?<url>[^)]+)\)')
+    $matches = [regex]::Matches($Line, $script:ManagedHistoryLinkPattern)
     if ($matches.Count -eq 0) {
         return $false
     }
 
     foreach ($match in $matches) {
-        $url = $match.Groups["url"].Value
-        if (-not (Test-ManagedHistoryUrl -Url $url -RepoPath $RepoPath)) {
-            return $true
+        $link = [pscustomobject]@{
+            Label = $match.Groups["label"].Value
+            Url = $match.Groups["url"].Value
+            Line = $Line
         }
-
-        $uri = $null
-        if ([System.Uri]::TryCreate($url, [System.UriKind]::Absolute, [ref] $uri)) {
-            $segments = @([System.Uri]::UnescapeDataString($uri.AbsolutePath.Trim("/")) -split "/" | Where-Object { $_ -ne "" })
-            if ($segments.Count -eq 4 -and $segments[2] -eq "commit" -and $segments[3] -match "^[0-9a-fA-F]{40}$") {
-                $commitSha = $segments[3]
-                if (-not (Test-GitCommitExists $commitSha)) {
-                    return $true
-                }
-
-                if (-not [string]::IsNullOrWhiteSpace($RepoPath) -and $null -ne $Config) {
-                    $parentsLine = Invoke-GitText -Arguments @("-C", $script:RepositoryRoot, "rev-list", "--parents", "-n", "1", $commitSha)
-                    if ($parentsLine.ExitCode -ne 0) {
-                        return $true
-                    }
-
-                    $tokens = @($parentsLine.Text.Trim() -split "\s+" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-                    $parentCount = [Math]::Max(0, $tokens.Count - 1)
-                    if ($parentCount -gt 1) {
-                        return $true
-                    }
-
-                    $headState = Get-ManagedBodyAtRevision -Revision $commitSha -RepoPath $RepoPath -Config $Config
-                    if (-not $headState.Exists) {
-                        return $true
-                    }
-
-                    if ($parentCount -eq 0) {
-                        return $false
-                    }
-
-                    $baseState = Get-ManagedBodyAtRevision -Revision $tokens[1] -RepoPath $RepoPath -Config $Config
-                    if (-not $baseState.Exists) {
-                        return $false
-                    }
-
-                    if ($headState.Body -eq $baseState.Body) {
-                        return $true
-                    }
-                }
-            }
+        if (-not (Test-ManagedPresentationLink -Link $link -RepoPath $RepoPath -Config $Config)) {
+            return $true
         }
     }
 
@@ -2535,12 +2533,12 @@ function Validate-FileMetadata {
                 Expected = "blank physical line after doc-metadata-presentation end marker"
             })
         }
-        foreach ($url in @(Get-ManagedPresentationUrls -MetadataInfo $MetadataInfo)) {
-            if (-not (Test-ManagedHistoryUrl -Url $url -RepoPath $RepoPath)) {
+        foreach ($link in @(Get-ManagedPresentationLinks -MetadataInfo $MetadataInfo)) {
+            if (-not (Test-ManagedPresentationLink -Link $link -RepoPath $RepoPath -Config $Config)) {
                 $errors.Add([pscustomobject]@{
                     Rule = "managed history URL"
-                    Current = "invalid URL: $url"
-                    Expected = "absolute GitHub commit, compare, or verified file URL for the configured repository"
+                    Current = "invalid link: $($link.Label) $($link.Url)"
+                    Expected = "proven View Commit link to a commit that changed this file's managed body"
                 })
             }
         }
@@ -3063,7 +3061,7 @@ function Initialize-OrUpdateFile {
     $hasAuthorDriftFromPrevious = $null -ne $previousSnapshot -and $null -ne $previousSnapshot.Author -and $currentSnapshot.Author -ne $previousSnapshot.Author
     $hasPresentationDriftFromPrevious = $null -ne $previousInfo -and $currentInfo.HasPresentation -and $previousInfo.HasPresentation -and -not (Test-ManagedHistoryEquivalent -Left $currentInfo -Right $previousInfo -RepoPath $repoPath -Config $config)
     $canRestoreMissingPresentation = $null -ne $previousInfo -and -not $currentInfo.HasPresentation -and $previousInfo.HasPresentation -and -not $previousInfo.IsPresentationMalformed
-    $canRestoreUrlFromPrevious = $null -ne $previousInfo -and $previousInfo.HasPresentation -and -not $previousInfo.IsPresentationMalformed -and (Test-ManagedPresentationUrls -MetadataInfo $previousInfo -RepoPath $repoPath)
+    $canRestoreUrlFromPrevious = $null -ne $previousInfo -and $previousInfo.HasPresentation -and -not $previousInfo.IsPresentationMalformed -and (Test-ManagedPresentationUrls -MetadataInfo $previousInfo -RepoPath $repoPath -Config $config)
     [object[]] $metadataFieldValidationErrors = @($validationErrors | Where-Object { $_.Rule -in @($config.versionField, $config.createdField, $config.updatedField, $config.authorField) })
     [object[]] $presentationValidationErrors = @($validationErrors | Where-Object { $_.Rule -eq "managed metadata presentation" })
 
@@ -3265,7 +3263,7 @@ function Analyze-GovernedFile {
     $hasAuthorDriftFromPrevious = $null -ne $previousSnapshot -and $null -ne $previousSnapshot.Author -and $currentSnapshot.Author -ne $previousSnapshot.Author
     $hasPresentationDriftFromPrevious = $null -ne $previousInfo -and $currentInfo.HasPresentation -and $previousInfo.HasPresentation -and -not (Test-ManagedHistoryEquivalent -Left $currentInfo -Right $previousInfo -RepoPath $repoPath -Config $config)
     $canRestoreMissingPresentation = $null -ne $previousInfo -and -not $currentInfo.HasPresentation -and $previousInfo.HasPresentation -and -not $previousInfo.IsPresentationMalformed
-    $canRestoreUrlFromPrevious = $null -ne $previousInfo -and $previousInfo.HasPresentation -and -not $previousInfo.IsPresentationMalformed -and (Test-ManagedPresentationUrls -MetadataInfo $previousInfo -RepoPath $repoPath)
+    $canRestoreUrlFromPrevious = $null -ne $previousInfo -and $previousInfo.HasPresentation -and -not $previousInfo.IsPresentationMalformed -and (Test-ManagedPresentationUrls -MetadataInfo $previousInfo -RepoPath $repoPath -Config $config)
 
     if ($urlValidationErrors.Count -gt 0 -and -not $canRestoreUrlFromPrevious) {
         foreach ($error in $urlValidationErrors) {

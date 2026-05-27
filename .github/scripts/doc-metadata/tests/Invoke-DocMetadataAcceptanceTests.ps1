@@ -158,10 +158,11 @@ function Get-MarkdownWithMetadata {
         [string] $Updated = "2026-01-01T00:00:00+00:00",
         [string] $Author = "Doc Metadata Tests",
         [string] $Body = "# Title`n",
-        [string] $CurrentChangesUrl = ""
+        [string] $CurrentChangesUrl = "",
+        [string] $CurrentChangesLinkText = "View Commit"
     )
 
-    $currentLink = if ([string]::IsNullOrWhiteSpace($CurrentChangesUrl)) { "" } else { "[<b>View Changes</b>]($CurrentChangesUrl)`n`n" }
+    $currentLink = if ([string]::IsNullOrWhiteSpace($CurrentChangesUrl)) { "" } else { "[<b>$CurrentChangesLinkText</b>]($CurrentChangesUrl)`n`n" }
     "---`nVersion: $Version`nCreated: $Created`nUpdated: $Updated`nAuthor: $Author`n---`n<!-- doc-metadata-presentation:start -->`n$currentLink<details>`n<summary>Change History</summary>`n`n- Updated: <b>$Updated</b> | Author: <b>$Author</b> | Changes: <b>Unavailable</b>`n`n</details>`n`n---`n`n<br>`n<br>`n<!-- doc-metadata-presentation:end -->`n`n$Body"
 }
 
@@ -233,7 +234,7 @@ Invoke-Test "Body change after dotted version increments first component and ref
     Assert-Equal "3" ([string] $report.updatedFiles[0].newVersion) "Report should include new major version."
 }
 
-Invoke-Test "Body change without reliable content context does not create View Changes or history" {
+Invoke-Test "Body change without reliable content context does not create a current link or history" {
     $root = New-TestRepository
     $readme = Join-Path $root "README.md"
     Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1")
@@ -245,7 +246,7 @@ Invoke-Test "Body change without reliable content context does not create View C
     Assert-Equal 0 $result.ExitCode "Body change should still be repairable without a reliable link context."
     $content = Get-Content -LiteralPath $readme -Raw
     Assert-True ($content -match "Version: 2") "Version should increment on body change."
-    Assert-True ($content -notmatch "\[<b>View Changes</b>\]") "No current View Changes link should be generated without reliable content context."
+    Assert-True ($content -notmatch "\[<b>View (?:Changes|Commit)</b>\]") "No current managed link should be generated without reliable content context."
     Assert-Equal 1 ([regex]::Matches($content, "(?m)^- Updated:").Count) "No new history entry should be added without reliable content context."
 }
 
@@ -399,6 +400,19 @@ Invoke-Test "Managed presentation URL validation rejects unrelated and generic r
     Assert-True ($blobResult.ExitCode -ne 0) "Blob URLs should fail because history entries must link to changes, not file-at-version views."
     Assert-True ($blobResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
 
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -CurrentChangesUrl "https://github.com/example/repo/compare/1111111111111111111111111111111111111111...2222222222222222222222222222222222222222" -CurrentChangesLinkText "View Changes")
+    $compareResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md") -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+
+    Assert-True ($compareResult.ExitCode -ne 0) "Current View Changes compare URLs should fail until verified file-specific changes support exists."
+    Assert-True ($compareResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
+
+    $historyCompare = (Get-MarkdownWithMetadata -Version "1").Replace("Changes: <b>Unavailable</b>", "Changes: [<b>View Changes</b>](https://github.com/example/repo/compare/1111111111111111111111111111111111111111...2222222222222222222222222222222222222222)")
+    Write-Utf8File -Path $readme -Content $historyCompare
+    $historyCompareResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md") -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+
+    Assert-True ($historyCompareResult.ExitCode -ne 0) "History View Changes compare URLs should fail until verified file-specific changes support exists."
+    Assert-True ($historyCompareResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
+
     Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -CurrentChangesUrl "https://github.com/other/repo/commit/4444444444444444444444444444444444444444")
 
     $result = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md") -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
@@ -411,6 +425,46 @@ Invoke-Test "Managed presentation URL validation rejects unrelated and generic r
 
     Assert-True ($genericResult.ExitCode -ne 0) "Generic repository home URLs should fail validation."
     Assert-True ($genericResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
+}
+
+Invoke-Test "Managed presentation links require View Commit and body-change proof" {
+    $root = New-TestRepository
+    $readme = Join-Path $root "README.md"
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1")
+    Commit-All -Root $root
+    $base = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
+
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -Body "# Title`nBody changed for link proof.`n")
+    Commit-All -Root $root -Message "readme body proof"
+    $bodyCommit = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
+
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "2" -Updated "2026-01-02T00:00:00+00:00" -Body "# Title`nBody changed for link proof.`n" -CurrentChangesUrl "https://github.com/example/repo/commit/$bodyCommit" -CurrentChangesLinkText "View Commit")
+    $validResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md", "-BaseSha", $base, "-HeadSha", $bodyCommit) -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+
+    Assert-Equal 0 $validResult.ExitCode "Proven View Commit link should pass managed presentation URL validation."
+
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "2" -Updated "2026-01-02T00:00:00+00:00" -Body "# Title`nBody changed for link proof.`n" -CurrentChangesUrl "https://github.com/example/repo/commit/$bodyCommit" -CurrentChangesLinkText "View Changes")
+    $viewChangesResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md", "-BaseSha", $base, "-HeadSha", $bodyCommit) -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+
+    Assert-True ($viewChangesResult.ExitCode -ne 0) "Commit URLs labeled View Changes should fail until verified file-specific changes support exists."
+    Assert-True ($viewChangesResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
+
+    Write-Utf8File -Path (Join-Path $root "docs\other.md") -Content "# Other`n"
+    Commit-All -Root $root -Message "other document"
+    $otherCommit = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
+
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "2" -Updated "2026-01-02T00:00:00+00:00" -Body "# Title`nBody changed for link proof.`n" -CurrentChangesUrl "https://github.com/example/repo/commit/$otherCommit" -CurrentChangesLinkText "View Commit")
+    $unprovenCommitResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md", "-BaseSha", $base, "-HeadSha", $bodyCommit) -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+
+    Assert-True ($unprovenCommitResult.ExitCode -ne 0) "Same-repo commit URLs should fail when the commit did not change the governed file body."
+    Assert-True ($unprovenCommitResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
+
+    $historyViewChanges = (Get-MarkdownWithMetadata -Version "2" -Updated "2026-01-02T00:00:00+00:00" -Body "# Title`nBody changed for link proof.`n").Replace("Changes: <b>Unavailable</b>", "Changes: [<b>View Changes</b>](https://github.com/example/repo/commit/$bodyCommit)")
+    Write-Utf8File -Path $readme -Content $historyViewChanges
+    $historyResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md", "-BaseSha", $base, "-HeadSha", $bodyCommit) -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+
+    Assert-True ($historyResult.ExitCode -ne 0) "History entries labeled View Changes should fail until verified file-specific changes support exists."
+    Assert-True ($historyResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
 }
 
 Invoke-Test "ContentChanges mode uses managed-body semantics for multi-commit ranges" {
@@ -594,23 +648,41 @@ Invoke-Test "Body repair does not strip unrelated governed metadata" {
     Assert-Equal "docs/one.md" $changed.changedFiles[0] "ChangedFilesOutputPath should name only docs/one.md."
 }
 
-Invoke-Test "Metadata-only presentation repair preserves metadata and current View Changes" {
+Invoke-Test "Metadata-only presentation repair preserves metadata and current View Commit" {
     $root = New-TestRepository
     $readme = Join-Path $root "README.md"
-    $content = Get-MarkdownWithMetadata -Version "4" -Updated "2026-02-01T00:00:00+00:00" -CurrentChangesUrl "https://github.com/example/repo/commit/2222222222222222222222222222222222222222"
-    $content = $content -replace "<!-- doc-metadata-presentation:end -->\n\n", "<!-- doc-metadata-presentation:end -->`n"
-    Write-Utf8File -Path $readme -Content $content
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1")
     Commit-All -Root $root
+    $base = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
+
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -Body "# Title`nContent version with proven link.`n")
+    Commit-All -Root $root -Message "content version"
+    $bodyCommit = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
+    $linkMap = Write-HistoryLinkMap -Root $root -Links @{
+        "README.md" = @{
+            path = "README.md"
+            url = "https://github.com/example/repo/commit/$bodyCommit"
+            linkText = "View Commit"
+            context = "local:$bodyCommit"
+            commitSha = $bodyCommit
+            bodyChanged = $true
+        }
+    }
+    $contentUpdate = Invoke-Tool -Root $root -Mode "Update" -ExtraArguments @("-Path", "README.md", "-BaseSha", $base, "-HeadSha", $bodyCommit, "-HistoryLinkMapPath", $linkMap) -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+    Assert-Equal 0 $contentUpdate.ExitCode "Body update with proven link should pass before metadata-only repair."
+    Commit-All -Root $root -Message "metadata update"
+
+    $content = (Get-Content -LiteralPath $readme -Raw) -replace "<!-- doc-metadata-presentation:end -->\r?\n\r?\n", "<!-- doc-metadata-presentation:end -->`n"
+    Write-Utf8File -Path $readme -Content $content
 
     $result = Invoke-Tool -Root $root -Mode "Update" -ExtraArguments @("-Path", "README.md", "-ChangedFilesOutputPath", "changed.json", "-ReportOutputPath", "report.json") -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
 
     Assert-Equal 0 $result.ExitCode "Presentation repair should pass."
     $after = Get-Content -LiteralPath $readme -Raw
-    Assert-True ($after -match "Version: 4") "Metadata-only repair must not change Version."
-    Assert-True ($after -match "Updated: 2026-02-01T00:00:00\+00:00") "Metadata-only repair must not change Updated."
+    Assert-True ($after -match "Version: 2") "Metadata-only repair must not change Version."
     Assert-True ($after -match "Author: Doc Metadata Tests") "Metadata-only repair must not change Author."
-    Assert-True ($after -match "\[<b>View Changes</b>\]\(https://github.com/example/repo/commit/2222222222222222222222222222222222222222\)") "Metadata-only repair should preserve the current View Changes link."
-    Assert-Equal 1 ([regex]::Matches($after, "(?m)^- Updated:").Count) "Metadata-only repair must not add a history entry."
+    Assert-True ($after -match "\[<b>View Commit</b>\]\(https://github.com/example/repo/commit/$bodyCommit\)") "Metadata-only repair should preserve the current proven View Commit link."
+    Assert-Equal 2 ([regex]::Matches($after, "(?m)^- Updated:").Count) "Metadata-only repair must not add a history entry."
     Assert-True ($after -match "<!-- doc-metadata-presentation:end -->\r?\n\r?\n# Title") "Presentation repair should restore the managed trailing blank line."
 }
 
