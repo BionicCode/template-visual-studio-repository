@@ -1,22 +1,3 @@
----
-Version: 1
-Created: 2026-05-26T19:43:20+00:00
-Updated: 2026-05-26T19:43:20+00:00
-Author: BionicCode
----
-<!-- doc-metadata-presentation:start -->
-<details>
-<summary>Change History</summary>
-
-
-</details>
-
----
-
-<br>
-<br>
-<!-- doc-metadata-presentation:end -->
-
 # Sync Manifest
 
 `sync-manifest.json` tells the reusable workflow which source files are managed and where they are projected in the caller repository. Caller repositories own their manifest; this workflows repository owns the engine, schema, semantic rules, starter template, and copied reference documentation.
