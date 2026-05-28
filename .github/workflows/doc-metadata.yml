@@ -701,10 +701,19 @@ jobs:
             exit 0
           }
 
-          $remoteBranchState = Invoke-Native -FileName "git" -Arguments @("ls-remote", "--heads", $remoteUrl, $repairBranch)
+          $remoteBranchState = @(
+            Invoke-Native -FileName "git" -Arguments @("ls-remote", "--heads", $remoteUrl, $repairBranch) |
+              Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+          )
+
           $remoteSha = $null
-          if ($remoteBranchState.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($remoteBranchState[0])) {
-            $remoteSha = ($remoteBranchState[0] -split "\s+")[0]
+          if ($remoteBranchState.Count -gt 0) {
+            $remoteBranchLine = [string] $remoteBranchState[0]
+            $remoteSha = ($remoteBranchLine -split "\s+")[0]
+
+            if ($remoteSha -notmatch '^[0-9a-fA-F]{40,64}$') {
+              throw "Unable to parse remote branch SHA from git ls-remote output for '$repairBranch'. Parsed value: '$remoteSha'. Raw line: '$remoteBranchLine'"
+            }
           }
 
           if (-not [string]::IsNullOrWhiteSpace($remoteSha)) {
