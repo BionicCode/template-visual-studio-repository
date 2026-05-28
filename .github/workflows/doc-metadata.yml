@@ -150,7 +150,7 @@ jobs:
         if: (inputs.event_name || github.event_name) == 'pull_request'
         uses: actions/checkout@v6
         with:
-          repository: ${{ inputs.head_repository }}
+          repository: ${{ inputs.head_repository || github.repository }}
           ref: ${{ inputs.head_sha }}
           path: work
           fetch-depth: 0
