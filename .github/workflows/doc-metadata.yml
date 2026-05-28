@@ -276,7 +276,7 @@ jobs:
     if: >
       needs.analyze-document-metadata.outputs.repair_required == 'true' &&
       needs.analyze-document-metadata.outputs.repair_safe == 'true' &&
-      ((inputs.event_name || github.event_name) != 'pull_request' || inputs.head_repository == github.repository) &&
+      ((inputs.event_name || github.event_name) != 'pull_request' || (inputs.head_repository || github.repository) == github.repository) &&
       !(((inputs.event_name || github.event_name) == 'pull_request' && startsWith(inputs.head_ref, 'codex/doc-metadata-repair/')) ||
       ((inputs.event_name || github.event_name) != 'pull_request' && startsWith(inputs.ref_name || github.ref_name, 'codex/doc-metadata-repair/')))
     runs-on: ubuntu-latest
