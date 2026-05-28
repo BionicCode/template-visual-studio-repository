@@ -19,7 +19,7 @@ Author: BionicCode
 
 # AGENT_GUARDRAILS.md 
 
-Version: 1
+Version: x
 
 ## Purpose
 

@@ -1,0 +1,51 @@
+name: Repository maintenance
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+
+concurrency:
+  group: repository-maintenance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  doc_metadata:
+    name: Document metadata
+    uses: ./.github/workflows/doc-metadata.yml
+    permissions:
+      contents: write
+      pull-requests: write
+    secrets: inherit
+    with:
+      event_name: ${{ github.event_name }}
+      ref_name: ${{ github.ref_name }}
+      default_branch: ${{ github.event.repository.default_branch }}
+      head_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      base_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+      before_sha: ${{ github.event_name == 'push' && github.event.before || '' }}
+      base_ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || '' }}
+      head_ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || '' }}
+      head_repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
+
+  sync_managed_files:
+    name: Sync managed files
+    needs: doc_metadata
+    if: ${{ always() }}
+    uses: ./.github/workflows/sync-managed-files.yml
+    permissions:
+      contents: write
+      pull-requests: write
+    secrets: inherit
+    with:
+      event_name: ${{ github.event_name }}
+      ref_name: ${{ github.ref_name }}
+      default_branch: ${{ github.event.repository.default_branch }}
+      base_ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || '' }}
+      head_ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || '' }}
+      pull_request_number: ${{ github.event_name == 'pull_request' && format('{0}', github.event.pull_request.number) || '' }}
