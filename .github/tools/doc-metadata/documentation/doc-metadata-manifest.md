@@ -19,6 +19,9 @@ Author: BionicCode
 
 # Document Metadata Manifest
 
+> [!INFO]
+> See [API referece](../documentation/doc-metadata-manifest-api.md) for manifest types  documentation.
+
 ## Purpose
 
 `.github/tools/doc-metadata/doc-metadata-manifest.json` defines candidate files, metadata defaults, presentation defaults, and eligibility rules. It is the only governance policy source for document metadata.

@@ -25,7 +25,6 @@ Everything above "Repository Specifics" is intended to remain stable across repo
 Repository owners may customize only the final "Repository Specifics" section.
 Recommended CI approach: protect all content above the repository-specific marker.
 -->
-
 ## Guardrail Routing
 
 For implementation tasks that touch public contracts, repository infrastructure, instruction files, schema/configuration files, build/test/CI behavior, security-sensitive behavior, generated templates, or cross-cutting migrations, also read and apply [AGENT_GUARDRAILS.md](AGENT_GUARDRAILS.md).
