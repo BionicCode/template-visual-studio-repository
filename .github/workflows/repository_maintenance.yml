@@ -36,6 +36,7 @@ jobs:
   sync_managed_files:
     name: Sync managed files
     needs: doc_metadata
+    if: ${{ always() }}
     uses: ./.github/workflows/sync-managed-files.yml
     permissions:
       contents: write
