@@ -123,13 +123,17 @@ jobs:
         working-directory: work
         env:
           GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY_NAME: ${{ github.repository }}
+          EFFECTIVE_BASE_REF_VALUE: ${{ env.EFFECTIVE_BASE_REF }}
+          EFFECTIVE_PR_BASE_SHA_VALUE: ${{ env.EFFECTIVE_PR_BASE_SHA }}
+          EFFECTIVE_PR_HEAD_SHA_VALUE: ${{ env.EFFECTIVE_PR_HEAD_SHA }}
         run: |
           set -euo pipefail
-          git remote add base "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
-          git fetch --no-tags base "+refs/heads/${{ env.EFFECTIVE_BASE_REF }}:refs/remotes/base/${{ env.EFFECTIVE_BASE_REF }}"
-          git cat-file -e "${{ env.EFFECTIVE_PR_BASE_SHA }}^{commit}"
-          git cat-file -e "${{ env.EFFECTIVE_PR_HEAD_SHA }}^{commit}"
-          git merge-base "${{ env.EFFECTIVE_PR_BASE_SHA }}" "${{ env.EFFECTIVE_PR_HEAD_SHA }}" >/dev/null
+          git remote add base "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY_NAME}.git"
+          git fetch --no-tags base "+refs/heads/${EFFECTIVE_BASE_REF_VALUE}:refs/remotes/base/${EFFECTIVE_BASE_REF_VALUE}"
+          git cat-file -e "${EFFECTIVE_PR_BASE_SHA_VALUE}^{commit}"
+          git cat-file -e "${EFFECTIVE_PR_HEAD_SHA_VALUE}^{commit}"
+          git merge-base "${EFFECTIVE_PR_BASE_SHA_VALUE}" "${EFFECTIVE_PR_HEAD_SHA_VALUE}" >/dev/null
 
       - name: Checkout working files for branch event
         if: env.EFFECTIVE_EVENT_NAME != 'pull_request'
@@ -144,12 +148,15 @@ jobs:
         id: event_payload
         shell: pwsh
         working-directory: work
+        env:
+          EVENT_PAYLOAD_JSON: ${{ inputs.event_payload_json }}
+          SOURCE_EVENT_PATH: ${{ github.event_path }}
         run: |
           $payloadPath = Join-Path (Get-Location) "doc-metadata-event.json"
-          $payloadJson = '${{ inputs.event_payload_json }}'
+          $payloadJson = $env:EVENT_PAYLOAD_JSON
 
           if ([string]::IsNullOrWhiteSpace($payloadJson)) {
-            $sourcePath = "${{ github.event_path }}"
+            $sourcePath = $env:SOURCE_EVENT_PATH
             if (-not [string]::IsNullOrWhiteSpace($sourcePath) -and (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
               Copy-Item -LiteralPath $sourcePath -Destination $payloadPath -Force
             }
@@ -166,13 +173,16 @@ jobs:
       - name: Analyze document metadata
         shell: pwsh
         working-directory: work
+        env:
+          DOC_METADATA_EVENT_NAME: ${{ env.EFFECTIVE_EVENT_NAME }}
+          DOC_METADATA_HEAD_SHA: ${{ env.EFFECTIVE_SHA }}
         run: |
           ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 `
             -Mode Analyze `
             -Root . `
-            -EventName "${{ env.EFFECTIVE_EVENT_NAME }}" `
+            -EventName "$env:DOC_METADATA_EVENT_NAME" `
             -EventPayloadPath "${{ steps.event_payload.outputs.path }}" `
-            -HeadSha "${{ env.EFFECTIVE_SHA }}" `
+            -HeadSha "$env:DOC_METADATA_HEAD_SHA" `
             -ReportOutputPath doc-metadata-analyze-report.json
 
       - name: Publish analyze outputs
@@ -259,13 +269,17 @@ jobs:
         working-directory: work
         env:
           GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY_NAME: ${{ github.repository }}
+          EFFECTIVE_BASE_REF_VALUE: ${{ env.EFFECTIVE_BASE_REF }}
+          EFFECTIVE_PR_BASE_SHA_VALUE: ${{ env.EFFECTIVE_PR_BASE_SHA }}
+          EFFECTIVE_PR_HEAD_SHA_VALUE: ${{ env.EFFECTIVE_PR_HEAD_SHA }}
         run: |
           set -euo pipefail
-          git remote add base "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
-          git fetch --no-tags base "+refs/heads/${{ env.EFFECTIVE_BASE_REF }}:refs/remotes/base/${{ env.EFFECTIVE_BASE_REF }}"
-          git cat-file -e "${{ env.EFFECTIVE_PR_BASE_SHA }}^{commit}"
-          git cat-file -e "${{ env.EFFECTIVE_PR_HEAD_SHA }}^{commit}"
-          git merge-base "${{ env.EFFECTIVE_PR_BASE_SHA }}" "${{ env.EFFECTIVE_PR_HEAD_SHA }}" >/dev/null
+          git remote add base "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY_NAME}.git"
+          git fetch --no-tags base "+refs/heads/${EFFECTIVE_BASE_REF_VALUE}:refs/remotes/base/${EFFECTIVE_BASE_REF_VALUE}"
+          git cat-file -e "${EFFECTIVE_PR_BASE_SHA_VALUE}^{commit}"
+          git cat-file -e "${EFFECTIVE_PR_HEAD_SHA_VALUE}^{commit}"
+          git merge-base "${EFFECTIVE_PR_BASE_SHA_VALUE}" "${EFFECTIVE_PR_HEAD_SHA_VALUE}" >/dev/null
 
       - name: Checkout target branch for bot repair
         if: env.EFFECTIVE_EVENT_NAME != 'pull_request'
@@ -281,8 +295,10 @@ jobs:
         if: env.EFFECTIVE_EVENT_NAME != 'pull_request'
         shell: pwsh
         working-directory: work
+        env:
+          TARGET_BRANCH_NAME: ${{ env.EFFECTIVE_REF_NAME }}
         run: |
-          $targetBranch = "${{ env.EFFECTIVE_REF_NAME }}"
+          $targetBranch = $env:TARGET_BRANCH_NAME
           $safeTarget = ($targetBranch -replace '[^A-Za-z0-9._-]+', '-').Trim('-')
           if ([string]::IsNullOrWhiteSpace($safeTarget)) {
             $safeTarget = "default"
@@ -301,12 +317,15 @@ jobs:
         id: event_payload
         shell: pwsh
         working-directory: work
+        env:
+          EVENT_PAYLOAD_JSON: ${{ inputs.event_payload_json }}
+          SOURCE_EVENT_PATH: ${{ github.event_path }}
         run: |
           $payloadPath = Join-Path (Get-Location) "doc-metadata-event.json"
-          $payloadJson = '${{ inputs.event_payload_json }}'
+          $payloadJson = $env:EVENT_PAYLOAD_JSON
 
           if ([string]::IsNullOrWhiteSpace($payloadJson)) {
-            $sourcePath = "${{ github.event_path }}"
+            $sourcePath = $env:SOURCE_EVENT_PATH
             if (-not [string]::IsNullOrWhiteSpace($sourcePath) -and (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
               Copy-Item -LiteralPath $sourcePath -Destination $payloadPath -Force
             }
@@ -323,13 +342,16 @@ jobs:
       - name: Analyze repairable files
         shell: pwsh
         working-directory: work
+        env:
+          DOC_METADATA_EVENT_NAME: ${{ env.EFFECTIVE_EVENT_NAME }}
+          DOC_METADATA_HEAD_SHA: ${{ env.EFFECTIVE_SHA }}
         run: |
           ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 `
             -Mode Analyze `
             -Root . `
-            -EventName "${{ env.EFFECTIVE_EVENT_NAME }}" `
+            -EventName "$env:DOC_METADATA_EVENT_NAME" `
             -EventPayloadPath "${{ steps.event_payload.outputs.path }}" `
-            -HeadSha "${{ env.EFFECTIVE_SHA }}" `
+            -HeadSha "$env:DOC_METADATA_HEAD_SHA" `
             -ReportOutputPath doc-metadata-repair-analyze-report.json
 
           $report = Get-Content -LiteralPath doc-metadata-repair-analyze-report.json -Raw | ConvertFrom-Json -Depth 32
@@ -339,21 +361,28 @@ jobs:
       - name: Resolve content-change links
         shell: pwsh
         working-directory: work
+        env:
+          DOC_METADATA_EVENT_NAME: ${{ env.EFFECTIVE_EVENT_NAME }}
+          GITHUB_REPOSITORY_NAME: ${{ github.repository }}
+          GITHUB_SERVER_URL_VALUE: ${{ github.server_url }}
         run: |
           ../trusted/.github/scripts/doc-metadata/resolve-content-change-links.ps1 `
             -Root . `
             -MetadataScriptPath ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 `
             -PathListPath doc-metadata-repair-paths.txt `
-            -EventName "${{ env.EFFECTIVE_EVENT_NAME }}" `
+            -EventName "$env:DOC_METADATA_EVENT_NAME" `
             -EventPayloadPath "${{ steps.event_payload.outputs.path }}" `
-            -Repository "${{ github.repository }}" `
-            -ServerUrl "${{ github.server_url }}" `
+            -Repository "$env:GITHUB_REPOSITORY_NAME" `
+            -ServerUrl "$env:GITHUB_SERVER_URL_VALUE" `
             -OutputPath doc-metadata-links.json
 
       - name: Repair document metadata
         id: repair
         shell: pwsh
         working-directory: work
+        env:
+          DOC_METADATA_EVENT_NAME: ${{ env.EFFECTIVE_EVENT_NAME }}
+          DOC_METADATA_HEAD_SHA: ${{ env.EFFECTIVE_SHA }}
         run: |
           $paths = @(Get-Content -LiteralPath doc-metadata-repair-paths.txt | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
           if ($paths.Count -eq 0) {
@@ -365,9 +394,9 @@ jobs:
             -Mode Update `
             -Root . `
             -Path $paths `
-            -EventName "${{ env.EFFECTIVE_EVENT_NAME }}" `
+            -EventName "$env:DOC_METADATA_EVENT_NAME" `
             -EventPayloadPath "${{ steps.event_payload.outputs.path }}" `
-            -HeadSha "${{ env.EFFECTIVE_SHA }}" `
+            -HeadSha "$env:DOC_METADATA_HEAD_SHA" `
             -HistoryLinkMapPath doc-metadata-links.json `
             -ChangedFilesOutputPath doc-metadata-changed-files.json `
             -ReportOutputPath doc-metadata-repair-report.json
@@ -391,14 +420,17 @@ jobs:
         continue-on-error: true
         shell: pwsh
         working-directory: work
+        env:
+          DOC_METADATA_EVENT_NAME: ${{ env.EFFECTIVE_EVENT_NAME }}
+          DOC_METADATA_PR_BASE_SHA: ${{ env.EFFECTIVE_PR_BASE_SHA }}
         run: |
           $head = (git rev-parse HEAD).Trim()
           $base = $null
-          if ("${{ env.EFFECTIVE_EVENT_NAME }}" -eq "pull_request") {
-            $eventBase = "${{ env.EFFECTIVE_PR_BASE_SHA }}"
+          if ($env:DOC_METADATA_EVENT_NAME -eq "pull_request") {
+            $eventBase = $env:DOC_METADATA_PR_BASE_SHA
             $base = (git merge-base $eventBase $head).Trim()
           }
-          elseif ("${{ env.EFFECTIVE_EVENT_NAME }}" -eq "push") {
+          elseif ($env:DOC_METADATA_EVENT_NAME -eq "push") {
             $payload = Get-Content -LiteralPath "${{ steps.event_payload.outputs.path }}" -Raw | ConvertFrom-Json -Depth 64
             if ($payload.before -and $payload.before -notmatch '^0{40}$') {
               $base = $payload.before
@@ -446,6 +478,18 @@ jobs:
         if: always()
         shell: pwsh
         working-directory: work
+        env:
+          DOC_METADATA_EVENT_NAME: ${{ env.EFFECTIVE_EVENT_NAME }}
+          DOC_METADATA_PR_HEAD_REF: ${{ env.EFFECTIVE_PR_HEAD_REF }}
+          DOC_METADATA_BASE_REF: ${{ env.EFFECTIVE_BASE_REF }}
+          DOC_METADATA_REF_NAME: ${{ env.EFFECTIVE_REF_NAME }}
+          DOC_METADATA_SOURCE_SHA: ${{ env.EFFECTIVE_SHA }}
+          GITHUB_WORKFLOW_NAME: ${{ github.workflow }}
+          GITHUB_SERVER_URL_VALUE: ${{ github.server_url }}
+          GITHUB_REPOSITORY_NAME: ${{ github.repository }}
+          GITHUB_RUN_ID_VALUE: ${{ github.run_id }}
+          GITHUB_RUN_NUMBER_VALUE: ${{ github.run_number }}
+          GITHUB_ACTOR_VALUE: ${{ github.actor }}
         run: |
           $ErrorActionPreference = "Stop"
 
@@ -543,17 +587,17 @@ jobs:
             throw "git rev-parse HEAD failed."
           }
 
-          $repairBranch = if ("${{ env.EFFECTIVE_EVENT_NAME }}" -eq "pull_request") {
-            "${{ env.EFFECTIVE_PR_HEAD_REF }}"
+          $repairBranch = if ($env:DOC_METADATA_EVENT_NAME -eq "pull_request") {
+            $env:DOC_METADATA_PR_HEAD_REF
           }
           else {
             "${{ steps.branch.outputs.repair_branch }}"
           }
-          $targetBranch = if ("${{ env.EFFECTIVE_EVENT_NAME }}" -eq "pull_request") {
-            "${{ env.EFFECTIVE_BASE_REF }}"
+          $targetBranch = if ($env:DOC_METADATA_EVENT_NAME -eq "pull_request") {
+            $env:DOC_METADATA_BASE_REF
           }
           else {
-            "${{ env.EFFECTIVE_REF_NAME }}"
+            $env:DOC_METADATA_REF_NAME
           }
 
           $builder = [System.Text.StringBuilder]::new()
@@ -563,14 +607,14 @@ jobs:
           [void] $builder.AppendLine()
           [void] $builder.AppendLine("## Workflow run")
           [void] $builder.AppendLine()
-          [void] $builder.AppendLine("- Workflow: ${{ github.workflow }}")
-          [void] $builder.AppendLine("- Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
-          [void] $builder.AppendLine("- Run ID: ${{ github.run_id }}")
-          [void] $builder.AppendLine("- Run number: ${{ github.run_number }}")
-          [void] $builder.AppendLine("- Event: ${{ env.EFFECTIVE_EVENT_NAME }}")
-          [void] $builder.AppendLine("- Actor: ${{ github.actor }}")
+          [void] $builder.AppendLine("- Workflow: $env:GITHUB_WORKFLOW_NAME")
+          [void] $builder.AppendLine("- Run URL: $($env:GITHUB_SERVER_URL_VALUE)/$($env:GITHUB_REPOSITORY_NAME)/actions/runs/$($env:GITHUB_RUN_ID_VALUE)")
+          [void] $builder.AppendLine("- Run ID: $env:GITHUB_RUN_ID_VALUE")
+          [void] $builder.AppendLine("- Run number: $env:GITHUB_RUN_NUMBER_VALUE")
+          [void] $builder.AppendLine("- Event: $env:DOC_METADATA_EVENT_NAME")
+          [void] $builder.AppendLine("- Actor: $env:GITHUB_ACTOR_VALUE")
           [void] $builder.AppendLine("- Target branch: $targetBranch")
-          [void] $builder.AppendLine("- Source SHA: ${{ env.EFFECTIVE_SHA }}")
+          [void] $builder.AppendLine("- Source SHA: $env:DOC_METADATA_SOURCE_SHA")
           [void] $builder.AppendLine("- Repair branch: $repairBranch")
           [void] $builder.AppendLine("- Repair commit SHA: $repairCommitSha")
           [void] $builder.AppendLine("- Post-repair Check result: ${{ steps.post_check.outcome }}")
@@ -598,16 +642,18 @@ jobs:
         working-directory: work
         env:
           GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY_NAME: ${{ github.repository }}
+          EFFECTIVE_PR_HEAD_REF_VALUE: ${{ env.EFFECTIVE_PR_HEAD_REF }}
         run: |
           set -euo pipefail
-          remote_url="https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
-          git fetch --no-tags "$remote_url" "+refs/heads/${{ env.EFFECTIVE_PR_HEAD_REF }}:refs/remotes/origin/${{ env.EFFECTIVE_PR_HEAD_REF }}"
-          commit_count="$(git rev-list --count "origin/${{ env.EFFECTIVE_PR_HEAD_REF }}..HEAD")"
+          remote_url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY_NAME}.git"
+          git fetch --no-tags "$remote_url" "+refs/heads/${EFFECTIVE_PR_HEAD_REF_VALUE}:refs/remotes/origin/${EFFECTIVE_PR_HEAD_REF_VALUE}"
+          commit_count="$(git rev-list --count "origin/${EFFECTIVE_PR_HEAD_REF_VALUE}..HEAD")"
           if [[ "$commit_count" == "0" ]]; then
             echo "No repair commits remain relative to the pull request branch; skipping repair push." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          git push "$remote_url" "HEAD:${{ env.EFFECTIVE_PR_HEAD_REF }}"
+          git push "$remote_url" "HEAD:${EFFECTIVE_PR_HEAD_REF_VALUE}"
 
       - name: Push bot repair branch and create or update pull request
         id: bot_pr
@@ -616,6 +662,8 @@ jobs:
         working-directory: work
         env:
           GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY_NAME: ${{ github.repository }}
+          TARGET_BRANCH_NAME: ${{ env.EFFECTIVE_REF_NAME }}
         run: |
           $ErrorActionPreference = "Stop"
 
@@ -636,8 +684,8 @@ jobs:
           }
 
           $repairBranch = "${{ steps.branch.outputs.repair_branch }}"
-          $targetBranch = "${{ env.EFFECTIVE_REF_NAME }}"
-          $remoteUrl = "https://x-access-token:${env:GH_TOKEN}@github.com/${{ github.repository }}.git"
+          $targetBranch = $env:TARGET_BRANCH_NAME
+          $remoteUrl = "https://x-access-token:${env:GH_TOKEN}@github.com/$($env:GITHUB_REPOSITORY_NAME).git"
           $bodyPath = "${{ steps.repair_report_summary.outputs.body_path }}"
           if ([string]::IsNullOrWhiteSpace($bodyPath)) {
             $bodyPath = "doc-metadata-repair-summary.md"
@@ -703,16 +751,26 @@ jobs:
     steps:
       - name: Gate final status
         shell: pwsh
+        env:
+          METADATA_VALID: ${{ needs.analyze-document-metadata.outputs.metadata_valid }}
+          REPAIR_REQUIRED: ${{ needs.analyze-document-metadata.outputs.repair_required }}
+          REPAIR_SAFE: ${{ needs.analyze-document-metadata.outputs.repair_safe }}
+          UNRECOVERABLE_FAILURE: ${{ needs.analyze-document-metadata.outputs.unrecoverable_failure }}
+          REPAIR_RESULT: ${{ needs.repair-document-metadata.result }}
+          REPAIRED_FILES: ${{ needs.repair-document-metadata.outputs.repaired_files }}
+          REMAINING_FAILED_FILES: ${{ needs.repair-document-metadata.outputs.remaining_failed_files }}
+          REMAINING_UNRECOVERABLE_FILES: ${{ needs.repair-document-metadata.outputs.remaining_unrecoverable_files }}
+          IS_REPAIR_BRANCH: ${{ env.EFFECTIVE_IS_REPAIR_BRANCH }}
         run: |
-          $metadataValid = "${{ needs.analyze-document-metadata.outputs.metadata_valid }}"
-          $repairRequired = "${{ needs.analyze-document-metadata.outputs.repair_required }}"
-          $repairSafe = "${{ needs.analyze-document-metadata.outputs.repair_safe }}"
-          $unrecoverableFailure = "${{ needs.analyze-document-metadata.outputs.unrecoverable_failure }}"
-          $repairResult = "${{ needs.repair-document-metadata.result }}"
-          $repairedFiles = "${{ needs.repair-document-metadata.outputs.repaired_files }}"
-          $remainingFailedFiles = "${{ needs.repair-document-metadata.outputs.remaining_failed_files }}"
-          $remainingUnrecoverableFiles = "${{ needs.repair-document-metadata.outputs.remaining_unrecoverable_files }}"
-          $isRepairBranch = "${{ env.EFFECTIVE_IS_REPAIR_BRANCH }}"
+          $metadataValid = $env:METADATA_VALID
+          $repairRequired = $env:REPAIR_REQUIRED
+          $repairSafe = $env:REPAIR_SAFE
+          $unrecoverableFailure = $env:UNRECOVERABLE_FAILURE
+          $repairResult = $env:REPAIR_RESULT
+          $repairedFiles = $env:REPAIRED_FILES
+          $remainingFailedFiles = $env:REMAINING_FAILED_FILES
+          $remainingUnrecoverableFiles = $env:REMAINING_UNRECOVERABLE_FILES
+          $isRepairBranch = $env:IS_REPAIR_BRANCH
 
           if ($unrecoverableFailure -eq "true") {
             Write-Error "Document metadata has unrecoverable failures. Review the analyze report."

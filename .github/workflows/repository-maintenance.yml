@@ -3,6 +3,8 @@ name: Repository maintenance
 on:
   pull_request:
   push:
+    branches:
+      - '**'
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
@@ -38,21 +40,38 @@ jobs:
       - name: Compute orchestration context
         id: normalize
         shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          REF_NAME: ${{ github.ref_name }}
+          REF: ${{ github.ref }}
+          REF_TYPE: ${{ github.ref_type }}
+          SHA: ${{ github.sha }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PULL_REQUEST_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PULL_REQUEST_HEAD_REPO_FULL_NAME: ${{ github.event.pull_request.head.repo.full_name }}
+          PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
         run: |
-          $eventName = "${{ github.event_name }}"
-          $defaultBranch = "${{ github.event.repository.default_branch }}"
-          $refName = "${{ github.ref_name }}"
-          $ref = "${{ github.ref }}"
-          $sha = "${{ github.sha }}"
-          $baseRef = "${{ github.base_ref }}"
-          $headRef = "${{ github.head_ref }}"
-          $pullRequestBaseSha = "${{ github.event.pull_request.base.sha }}"
-          $pullRequestHeadSha = "${{ github.event.pull_request.head.sha }}"
-          $pullRequestHeadRef = "${{ github.event.pull_request.head.ref }}"
-          $pullRequestHeadRepoFullName = "${{ github.event.pull_request.head.repo.full_name }}"
-          $pullRequestNumber = "${{ github.event.pull_request.number }}"
-          $pushBefore = "${{ github.event.before }}"
-          $pushAfter = "${{ github.event.after }}"
+          $eventName = $env:EVENT_NAME
+          $defaultBranch = $env:DEFAULT_BRANCH
+          $refName = $env:REF_NAME
+          $ref = $env:REF
+          $refType = $env:REF_TYPE
+          $sha = $env:SHA
+          $baseRef = $env:BASE_REF
+          $headRef = $env:HEAD_REF
+          $pullRequestBaseSha = $env:PULL_REQUEST_BASE_SHA
+          $pullRequestHeadSha = $env:PULL_REQUEST_HEAD_SHA
+          $pullRequestHeadRef = $env:PULL_REQUEST_HEAD_REF
+          $pullRequestHeadRepoFullName = $env:PULL_REQUEST_HEAD_REPO_FULL_NAME
+          $pullRequestNumber = $env:PULL_REQUEST_NUMBER
+          $pushBefore = $env:PUSH_BEFORE
+          $pushAfter = $env:PUSH_AFTER
 
           $isRepairBranch = $false
           if ($eventName -eq "pull_request") {
@@ -63,13 +82,13 @@ jobs:
           }
 
           $shouldRunDocMetadata = $false
-          if (($eventName -eq "workflow_dispatch" -or $eventName -eq "pull_request" -or ($eventName -eq "push" -and @("main", "master") -contains $refName)) -and -not $isRepairBranch) {
+          if (($eventName -eq "workflow_dispatch" -or $eventName -eq "pull_request" -or ($eventName -eq "push" -and $refType -eq "branch" -and @("main", "master") -contains $refName)) -and -not $isRepairBranch) {
             $shouldRunDocMetadata = $true
           }
 
           $shouldRunSyncManagedFiles =
             $eventName -eq "schedule" -or
-            ($eventName -eq "push" -and $refName -eq $defaultBranch) -or
+            ($eventName -eq "push" -and $refType -eq "branch" -and $refName -eq $defaultBranch) -or
             ($eventName -eq "pull_request" -and $baseRef -eq $defaultBranch) -or
             ($eventName -eq "workflow_dispatch" -and $refName -eq $defaultBranch)
 
@@ -144,13 +163,7 @@ jobs:
     needs:
       - normalize
       - doc-metadata
-    if: >
-      !cancelled() &&
-      needs.normalize.outputs.should_run_sync_managed_files == 'true' &&
-      (
-        needs.normalize.outputs.should_run_doc_metadata != 'true' ||
-        needs.doc-metadata.result == 'success'
-      )
+    if: ${{ !cancelled() && needs.normalize.outputs.should_run_sync_managed_files == 'true' && (needs.normalize.outputs.should_run_doc_metadata != 'true' || needs.doc-metadata.result == 'success') }}
     permissions:
       contents: write
       pull-requests: write
