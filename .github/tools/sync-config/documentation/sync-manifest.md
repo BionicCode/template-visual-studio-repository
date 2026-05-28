@@ -16,6 +16,13 @@ Author: BionicCode
 <br>
 <br>
 <!-- doc-metadata-presentation:end -->
+
+# Sync Manifest
+
+`sync-manifest.json` tells the reusable workflow which source files are managed and where they are projected in the caller repository. Caller repositories own their manifest; this workflows repository owns the engine, schema, semantic rules, starter template, and copied reference documentation.
+
+## Complete Shape
+
 ```json
 {
   "$schema": "./sync-manifest.schema.json",
