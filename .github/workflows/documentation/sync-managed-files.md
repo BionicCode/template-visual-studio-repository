@@ -1,6 +1,6 @@
 # Sync managed files
 
-> [!INFO]
+> [!NOTE]
 > See [tool documentation](../../tools/sync-config/documentation/sync-manifest.md) for detailed information about configuration using the manifest.
 
 ## Purpose

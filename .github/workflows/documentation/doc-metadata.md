@@ -1,6 +1,6 @@
-# Document metadataV
+# Document metadata
 
-> [!INFO]
+> [!NOTE]
 > See [tool documentation](../../tools/doc-metadata/documentation/doc-metadata-manifest.md) for detailed information about configuration using the manifest.
 
 ## Purpose
