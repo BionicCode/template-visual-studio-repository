@@ -345,6 +345,7 @@ jobs:
         env:
           DOC_METADATA_EVENT_NAME: ${{ env.EFFECTIVE_EVENT_NAME }}
           DOC_METADATA_HEAD_SHA: ${{ env.EFFECTIVE_SHA }}
+          DOC_METADATA_REPAIR_PATHS_PATH: ${{ runner.temp }}/doc-metadata-repair-paths.txt
         run: |
           ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 `
             -Mode Analyze `
@@ -356,7 +357,7 @@ jobs:
 
           $report = Get-Content -LiteralPath doc-metadata-repair-analyze-report.json -Raw | ConvertFrom-Json -Depth 32
           $paths = @($report.analysis.repairableFiles | ForEach-Object { $_.path } | Sort-Object -Unique)
-          $paths | Set-Content -LiteralPath doc-metadata-repair-paths.txt -Encoding utf8NoBOM
+          $paths | Set-Content -LiteralPath $env:DOC_METADATA_REPAIR_PATHS_PATH -Encoding utf8NoBOM
 
       - name: Resolve content-change links
         shell: pwsh
@@ -365,11 +366,12 @@ jobs:
           DOC_METADATA_EVENT_NAME: ${{ env.EFFECTIVE_EVENT_NAME }}
           GITHUB_REPOSITORY_NAME: ${{ github.repository }}
           GITHUB_SERVER_URL_VALUE: ${{ github.server_url }}
+          DOC_METADATA_REPAIR_PATHS_PATH: ${{ runner.temp }}/doc-metadata-repair-paths.txt
         run: |
           ../trusted/.github/scripts/doc-metadata/resolve-content-change-links.ps1 `
             -Root . `
             -MetadataScriptPath ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 `
-            -PathListPath doc-metadata-repair-paths.txt `
+            -PathListPath "$env:DOC_METADATA_REPAIR_PATHS_PATH" `
             -EventName "$env:DOC_METADATA_EVENT_NAME" `
             -EventPayloadPath "${{ steps.event_payload.outputs.path }}" `
             -Repository "$env:GITHUB_REPOSITORY_NAME" `
@@ -383,8 +385,9 @@ jobs:
         env:
           DOC_METADATA_EVENT_NAME: ${{ env.EFFECTIVE_EVENT_NAME }}
           DOC_METADATA_HEAD_SHA: ${{ env.EFFECTIVE_SHA }}
+          DOC_METADATA_REPAIR_PATHS_PATH: ${{ runner.temp }}/doc-metadata-repair-paths.txt
         run: |
-          $paths = @(Get-Content -LiteralPath doc-metadata-repair-paths.txt | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+          $paths = @(Get-Content -LiteralPath $env:DOC_METADATA_REPAIR_PATHS_PATH | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
           if ($paths.Count -eq 0) {
             "changed=false" >> $env:GITHUB_OUTPUT
             exit 0
