@@ -1,22 +1,3 @@
----
-Version: 1
-Created: 2026-05-28T10:47:30+00:00
-Updated: 2026-05-28T10:47:30+00:00
-Author: BionicCode
----
-<!-- doc-metadata-presentation:start -->
-<details>
-<summary>Change History</summary>
-
-
-</details>
-
----
-
-<br>
-<br>
-<!-- doc-metadata-presentation:end -->
-
 # SourceSelector
 
 Field group owned by `ManifestEntry`. Exactly one selector is required.
