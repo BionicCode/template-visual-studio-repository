@@ -1,6 +1,6 @@
 # Workflow Documentation
 
-This directory contains the repository's GitHub Actions workflow definitions and their maintainer-facing documentation.
+This directory contains the repository's GitHub Actions workflow definitions and their workflow documentation.
 
 > [!IMPORTANT]
 > [repository-maintenance.yml](repository-maintenance.yml) is the central trigger owner for repository maintenance. The child workflows in this directory are documented as passive/reusable workflows unless they are run directly with `workflow_dispatch`.
