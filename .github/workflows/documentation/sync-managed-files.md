@@ -1,5 +1,8 @@
 # Sync managed files
 
+> [!INFO]
+> See [tool documentation](../../tools/sync-config/documentation/sync-manifest.md) for detailed information about configuration using the manifest.
+
 ## Purpose
 
 [sync-managed-files.yml](../sync-managed-files.yml) inspects the local sync manifest and delegates managed-file initialization or synchronization to the shared reusable workflow in `BionicCode/workflows`.
