@@ -1,79 +1,21 @@
 name: Sync managed files
 
 on:
-  workflow_call:
-    inputs:
-      event_name:
-        description: "Original event name forwarded by the maintenance orchestrator."
-        required: true
-        type: string
-      ref_name:
-        description: "Original branch or ref name forwarded by the maintenance orchestrator."
-        required: true
-        type: string
-      default_branch:
-        description: "Repository default branch name."
-        required: false
-        type: string
-      base_ref:
-        description: "Pull request base branch name, when the original event was pull_request."
-        required: false
-        type: string
-      head_ref:
-        description: "Pull request head branch name, when the original event was pull_request. Used for concurrency only."
-        required: false
-        type: string
-      pull_request_number:
-        description: "Pull request number, when the original event was pull_request. Used for concurrency only."
-        required: false
-        type: string
-    secrets:
-      SOURCE_REPO_READ_TOKEN:
-        description: "Token used by the shared sync workflow to read source repositories."
-        required: false
-
   workflow_dispatch:
-    inputs:
-      event_name:
-        description: "Effective event name for this manual run."
-        required: false
-        default: "workflow_dispatch"
-        type: string
-      ref_name:
-        description: "Effective branch/ref name. Leave empty to use the selected workflow ref."
-        required: false
-        default: ""
-        type: string
-      default_branch:
-        description: "Repository default branch name. Leave empty to use repository metadata."
-        required: false
-        default: ""
-        type: string
-      base_ref:
-        description: "Optional pull request base branch name."
-        required: false
-        default: ""
-        type: string
-      head_ref:
-        description: "Optional pull request head branch name. Used for concurrency only."
-        required: false
-        default: ""
-        type: string
-      pull_request_number:
-        description: "Optional pull request number. Used for concurrency only."
-        required: false
-        default: ""
-        type: string
+  pull_request:
+  push:
+  schedule:
+    - cron: "17 3 * * *"
 
 concurrency:
-  group: sync-managed-files-${{ github.repository }}-${{ inputs.event_name || github.event_name }}-${{ inputs.pull_request_number || inputs.head_ref || inputs.ref_name || github.ref }}
+  group: caller-sync-managed-files-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   reject-non-default-manual-run:
     if: >
-      (inputs.event_name || github.event_name) == 'workflow_dispatch' &&
-      (inputs.ref_name || github.ref_name) != (inputs.default_branch || github.event.repository.default_branch)
+      github.event_name == 'workflow_dispatch' &&
+      github.ref_name != github.event.repository.default_branch
     runs-on: ubuntu-latest
     permissions: {}
 
@@ -86,10 +28,10 @@ jobs:
 
   inspect-manifest:
     if: >
-      (inputs.event_name || github.event_name) == 'schedule' ||
-      ((inputs.event_name || github.event_name) == 'push' && (inputs.ref_name || github.ref_name) == (inputs.default_branch || github.event.repository.default_branch)) ||
-      ((inputs.event_name || github.event_name) == 'pull_request' && (inputs.base_ref || github.base_ref) == (inputs.default_branch || github.event.repository.default_branch)) ||
-      ((inputs.event_name || github.event_name) == 'workflow_dispatch' && (inputs.ref_name || github.ref_name) == (inputs.default_branch || github.event.repository.default_branch))
+      github.event_name == 'schedule' ||
+      (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch) ||
+      (github.event_name == 'pull_request' && github.base_ref == github.event.repository.default_branch) ||
+      (github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -128,7 +70,7 @@ jobs:
   fail-missing-manifest-on-pr:
     needs: inspect-manifest
     if: >
-      (inputs.event_name || github.event_name) == 'pull_request' &&
+      github.event_name == 'pull_request' &&
       needs.inspect-manifest.outputs.manifest_exists != 'true'
     runs-on: ubuntu-latest
     permissions: {}
@@ -144,8 +86,8 @@ jobs:
     needs: inspect-manifest
     if: >
       needs.inspect-manifest.outputs.manifest_exists != 'true' &&
-      (inputs.event_name || github.event_name) != 'pull_request' &&
-      ((inputs.event_name || github.event_name) == 'schedule' || (inputs.ref_name || github.ref_name) == (inputs.default_branch || github.event.repository.default_branch))
+      github.event_name != 'pull_request' &&
+      (github.event_name == 'schedule' || github.ref_name == github.event.repository.default_branch)
     permissions:
       contents: write
       pull-requests: write

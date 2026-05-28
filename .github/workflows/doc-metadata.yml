@@ -1,117 +1,15 @@
 name: Document metadata
 
 on:
-  workflow_call:
-    inputs:
-      event_name:
-        description: "Original event name forwarded by the maintenance orchestrator."
-        required: true
-        type: string
-      ref_name:
-        description: "Original branch or ref name forwarded by the maintenance orchestrator."
-        required: true
-        type: string
-      default_branch:
-        description: "Repository default branch name."
-        required: false
-        type: string
-      head_sha:
-        description: "Original head SHA forwarded by the maintenance orchestrator."
-        required: true
-        type: string
-      base_sha:
-        description: "Pull request base SHA, when the original event was pull_request."
-        required: false
-        type: string
-      before_sha:
-        description: "Push before SHA, when the original event was push."
-        required: false
-        type: string
-      base_ref:
-        description: "Pull request base branch name, when the original event was pull_request."
-        required: false
-        type: string
-      head_ref:
-        description: "Pull request head branch name, when the original event was pull_request."
-        required: false
-        type: string
-      head_repository:
-        description: "Repository containing the head commit."
-        required: true
-        type: string
-    outputs:
-      metadata_valid:
-        description: "Whether governed document metadata is valid after analysis."
-        value: ${{ jobs.analyze-document-metadata.outputs.metadata_valid }}
-      repair_required:
-        description: "Whether analysis found safely repairable metadata."
-        value: ${{ jobs.analyze-document-metadata.outputs.repair_required }}
-      repair_safe:
-        description: "Whether detected metadata issues are safe to repair automatically."
-        value: ${{ jobs.analyze-document-metadata.outputs.repair_safe }}
-      unrecoverable_failure:
-        description: "Whether analysis found unrecoverable metadata failures."
-        value: ${{ jobs.analyze-document-metadata.outputs.unrecoverable_failure }}
-      repaired_files:
-        description: "Comma-separated list of files repaired by the repair job."
-        value: ${{ jobs.repair-document-metadata.outputs.repaired_files }}
-      remaining_failed_files:
-        description: "Comma-separated list of files still failing after repair."
-        value: ${{ jobs.repair-document-metadata.outputs.remaining_failed_files }}
-      remaining_unrecoverable_files:
-        description: "Comma-separated list of unrecoverable files still present after repair."
-        value: ${{ jobs.repair-document-metadata.outputs.remaining_unrecoverable_files }}
-
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
   workflow_dispatch:
-    inputs:
-      event_name:
-        description: "Effective event name for this manual run."
-        required: false
-        default: "workflow_dispatch"
-        type: string
-      ref_name:
-        description: "Effective branch/ref name. Leave empty to use the selected workflow ref."
-        required: false
-        default: ""
-        type: string
-      default_branch:
-        description: "Repository default branch name. Leave empty to use repository metadata."
-        required: false
-        default: ""
-        type: string
-      head_sha:
-        description: "Effective head SHA. Leave empty to use the selected workflow SHA."
-        required: false
-        default: ""
-        type: string
-      base_sha:
-        description: "Optional pull request base SHA."
-        required: false
-        default: ""
-        type: string
-      before_sha:
-        description: "Optional push before SHA."
-        required: false
-        default: ""
-        type: string
-      base_ref:
-        description: "Optional pull request base branch name."
-        required: false
-        default: ""
-        type: string
-      head_ref:
-        description: "Optional pull request head branch name."
-        required: false
-        default: ""
-        type: string
-      head_repository:
-        description: "Repository containing the head commit. Leave empty to use this repository."
-        required: false
-        default: ""
-        type: string
 
 concurrency:
-  group: document-metadata-${{ inputs.event_name || github.event_name }}-${{ inputs.head_repository || github.repository }}-${{ inputs.head_ref || inputs.ref_name || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -129,35 +27,35 @@ jobs:
 
     steps:
       - name: Checkout trusted scripts for pull request
-        if: (inputs.event_name || github.event_name) == 'pull_request'
+        if: github.event_name == 'pull_request'
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.base_sha }}
+          ref: ${{ github.event.pull_request.base.sha }}
           path: trusted
           fetch-depth: 0
           persist-credentials: false
 
       - name: Checkout trusted scripts for trusted branch
-        if: (inputs.event_name || github.event_name) != 'pull_request'
+        if: github.event_name != 'pull_request'
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.default_branch || github.event.repository.default_branch }}
+          ref: ${{ github.event.repository.default_branch }}
           path: trusted
           fetch-depth: 0
           persist-credentials: false
 
       - name: Checkout working files for pull request
-        if: (inputs.event_name || github.event_name) == 'pull_request'
+        if: github.event_name == 'pull_request'
         uses: actions/checkout@v6
         with:
-          repository: ${{ inputs.head_repository }}
-          ref: ${{ inputs.head_sha }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
           path: work
           fetch-depth: 0
           persist-credentials: false
 
       - name: Ensure pull request comparison SHAs are fetchable
-        if: (inputs.event_name || github.event_name) == 'pull_request'
+        if: github.event_name == 'pull_request'
         shell: bash
         working-directory: work
         env:
@@ -165,68 +63,19 @@ jobs:
         run: |
           set -euo pipefail
           git remote add base "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
-          git fetch --no-tags base "+refs/heads/${{ inputs.base_ref }}:refs/remotes/base/${{ inputs.base_ref }}"
-          git cat-file -e "${{ inputs.base_sha }}^{commit}"
-          git cat-file -e "${{ inputs.head_sha }}^{commit}"
-          git merge-base "${{ inputs.base_sha }}" "${{ inputs.head_sha }}" >/dev/null
+          git fetch --no-tags base "+refs/heads/${{ github.base_ref }}:refs/remotes/base/${{ github.base_ref }}"
+          git cat-file -e "${{ github.event.pull_request.base.sha }}^{commit}"
+          git cat-file -e "${{ github.event.pull_request.head.sha }}^{commit}"
+          git merge-base "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" >/dev/null
 
       - name: Checkout working files for branch event
-        if: (inputs.event_name || github.event_name) != 'pull_request'
+        if: github.event_name != 'pull_request'
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.head_sha || github.sha }}
+          ref: ${{ github.sha }}
           path: work
           fetch-depth: 0
           persist-credentials: false
-
-      - name: Write effective event payload
-        id: invocation
-        shell: pwsh
-        env:
-          DOC_METADATA_EVENT_NAME: ${{ inputs.event_name || github.event_name }}
-          DOC_METADATA_BASE_SHA: ${{ inputs.base_sha }}
-          DOC_METADATA_HEAD_SHA: ${{ inputs.head_sha || github.sha }}
-          DOC_METADATA_BEFORE_SHA: ${{ inputs.before_sha }}
-          DOC_METADATA_BASE_REF: ${{ inputs.base_ref }}
-          DOC_METADATA_HEAD_REF: ${{ inputs.head_ref }}
-          DOC_METADATA_REF_NAME: ${{ inputs.ref_name || github.ref_name }}
-          DOC_METADATA_HEAD_REPOSITORY: ${{ inputs.head_repository || github.repository }}
-        run: |
-          $payloadPath = Join-Path $env:GITHUB_WORKSPACE "doc-metadata-effective-event.json"
-          $payloadRef = $null
-          if (-not [string]::IsNullOrWhiteSpace($env:DOC_METADATA_REF_NAME)) {
-            $payloadRef = "refs/heads/$($env:DOC_METADATA_REF_NAME)"
-          }
-
-          $payload = [ordered]@{
-            before = $env:DOC_METADATA_BEFORE_SHA
-            after = $env:DOC_METADATA_HEAD_SHA
-            ref = $payloadRef
-            pull_request = [ordered]@{
-              base = [ordered]@{
-                sha = $env:DOC_METADATA_BASE_SHA
-                ref = $env:DOC_METADATA_BASE_REF
-              }
-              head = [ordered]@{
-                sha = $env:DOC_METADATA_HEAD_SHA
-                ref = $env:DOC_METADATA_HEAD_REF
-                repo = [ordered]@{
-                  full_name = $env:DOC_METADATA_HEAD_REPOSITORY
-                }
-              }
-            }
-          }
-
-          $payload | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $payloadPath -Encoding utf8NoBOM
-          "event_name=$($env:DOC_METADATA_EVENT_NAME)" >> $env:GITHUB_OUTPUT
-          "event_payload_path=$payloadPath" >> $env:GITHUB_OUTPUT
-          "head_sha=$($env:DOC_METADATA_HEAD_SHA)" >> $env:GITHUB_OUTPUT
-          "base_sha=$($env:DOC_METADATA_BASE_SHA)" >> $env:GITHUB_OUTPUT
-          "before_sha=$($env:DOC_METADATA_BEFORE_SHA)" >> $env:GITHUB_OUTPUT
-          "base_ref=$($env:DOC_METADATA_BASE_REF)" >> $env:GITHUB_OUTPUT
-          "head_ref=$($env:DOC_METADATA_HEAD_REF)" >> $env:GITHUB_OUTPUT
-          "ref_name=$($env:DOC_METADATA_REF_NAME)" >> $env:GITHUB_OUTPUT
-          "head_repository=$($env:DOC_METADATA_HEAD_REPOSITORY)" >> $env:GITHUB_OUTPUT
 
       - name: Analyze document metadata
         shell: pwsh
@@ -235,9 +84,9 @@ jobs:
           ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 `
             -Mode Analyze `
             -Root . `
-            -EventName "${{ steps.invocation.outputs.event_name }}" `
-            -EventPayloadPath "${{ steps.invocation.outputs.event_payload_path }}" `
-            -HeadSha "${{ inputs.head_sha || github.sha }}" `
+            -EventName "${{ github.event_name }}" `
+            -EventPayloadPath "${{ github.event_path }}" `
+            -HeadSha "${{ github.sha }}" `
             -ReportOutputPath doc-metadata-analyze-report.json
 
       - name: Publish analyze outputs
@@ -264,8 +113,8 @@ jobs:
 
       - name: Report repair branch publishing guard
         if: >
-          ((inputs.event_name || github.event_name) == 'pull_request' && startsWith(inputs.head_ref, 'codex/doc-metadata-repair/')) ||
-          ((inputs.event_name || github.event_name) != 'pull_request' && startsWith(inputs.ref_name || github.ref_name, 'codex/doc-metadata-repair/'))
+          (github.event_name == 'pull_request' && startsWith(github.head_ref, 'codex/doc-metadata-repair/')) ||
+          (github.event_name != 'pull_request' && startsWith(github.ref_name, 'codex/doc-metadata-repair/'))
         shell: pwsh
         run: |
           "Repair publishing skipped because this run is already on a doc-metadata repair branch." >> $env:GITHUB_STEP_SUMMARY
@@ -276,9 +125,9 @@ jobs:
     if: >
       needs.analyze-document-metadata.outputs.repair_required == 'true' &&
       needs.analyze-document-metadata.outputs.repair_safe == 'true' &&
-      ((inputs.event_name || github.event_name) != 'pull_request' || (inputs.head_repository || github.repository) == github.repository) &&
-      !(((inputs.event_name || github.event_name) == 'pull_request' && startsWith(inputs.head_ref, 'codex/doc-metadata-repair/')) ||
-      ((inputs.event_name || github.event_name) != 'pull_request' && startsWith(inputs.ref_name || github.ref_name, 'codex/doc-metadata-repair/')))
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+      !((github.event_name == 'pull_request' && startsWith(github.head_ref, 'codex/doc-metadata-repair/')) ||
+      (github.event_name != 'pull_request' && startsWith(github.ref_name, 'codex/doc-metadata-repair/')))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -288,40 +137,40 @@ jobs:
       remaining_failed_files: ${{ steps.post_check_outputs.outputs.remaining_failed_files }}
       remaining_unrecoverable_files: ${{ steps.post_check_outputs.outputs.remaining_unrecoverable_files }}
     concurrency:
-      group: codex-doc-metadata-repair-${{ inputs.head_ref || inputs.ref_name || github.ref_name }}
+      group: codex-doc-metadata-repair-${{ github.event.pull_request.head.ref || github.ref_name }}
       cancel-in-progress: false
 
     steps:
       - name: Checkout trusted scripts for pull request
-        if: (inputs.event_name || github.event_name) == 'pull_request'
+        if: github.event_name == 'pull_request'
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.base_sha }}
+          ref: ${{ github.event.pull_request.base.sha }}
           path: trusted
           fetch-depth: 0
           persist-credentials: false
 
       - name: Checkout trusted scripts for trusted branch
-        if: (inputs.event_name || github.event_name) != 'pull_request'
+        if: github.event_name != 'pull_request'
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.default_branch || github.event.repository.default_branch }}
+          ref: ${{ github.event.repository.default_branch }}
           path: trusted
           fetch-depth: 0
           persist-credentials: false
 
       - name: Checkout same-repository pull request branch
-        if: (inputs.event_name || github.event_name) == 'pull_request'
+        if: github.event_name == 'pull_request'
         uses: actions/checkout@v6
         with:
           repository: ${{ github.repository }}
-          ref: ${{ inputs.head_ref }}
+          ref: ${{ github.event.pull_request.head.ref }}
           path: work
           fetch-depth: 0
           persist-credentials: false
 
       - name: Ensure pull request repair comparison SHAs are fetchable
-        if: (inputs.event_name || github.event_name) == 'pull_request'
+        if: github.event_name == 'pull_request'
         shell: bash
         working-directory: work
         env:
@@ -329,27 +178,27 @@ jobs:
         run: |
           set -euo pipefail
           git remote add base "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
-          git fetch --no-tags base "+refs/heads/${{ inputs.base_ref }}:refs/remotes/base/${{ inputs.base_ref }}"
-          git cat-file -e "${{ inputs.base_sha }}^{commit}"
-          git cat-file -e "${{ inputs.head_sha }}^{commit}"
-          git merge-base "${{ inputs.base_sha }}" "${{ inputs.head_sha }}" >/dev/null
+          git fetch --no-tags base "+refs/heads/${{ github.base_ref }}:refs/remotes/base/${{ github.base_ref }}"
+          git cat-file -e "${{ github.event.pull_request.base.sha }}^{commit}"
+          git cat-file -e "${{ github.event.pull_request.head.sha }}^{commit}"
+          git merge-base "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" >/dev/null
 
       - name: Checkout target branch for bot repair
-        if: (inputs.event_name || github.event_name) != 'pull_request'
+        if: github.event_name != 'pull_request'
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.ref_name || github.ref_name }}
+          ref: ${{ github.ref_name }}
           path: work
           fetch-depth: 0
           persist-credentials: false
 
       - name: Prepare bot repair branch
         id: branch
-        if: (inputs.event_name || github.event_name) != 'pull_request'
+        if: github.event_name != 'pull_request'
         shell: pwsh
         working-directory: work
         run: |
-          $targetBranch = "${{ inputs.ref_name || github.ref_name }}"
+          $targetBranch = "${{ github.ref_name }}"
           $safeTarget = ($targetBranch -replace '[^A-Za-z0-9._-]+', '-').Trim('-')
           if ([string]::IsNullOrWhiteSpace($safeTarget)) {
             $safeTarget = "default"
@@ -364,103 +213,42 @@ jobs:
           git checkout -B $repairBranch
           "repair_branch=$repairBranch" >> $env:GITHUB_OUTPUT
 
-      - name: Write effective event payload
-        id: invocation
-        shell: pwsh
-        env:
-          DOC_METADATA_EVENT_NAME: ${{ inputs.event_name || github.event_name }}
-          DOC_METADATA_BASE_SHA: ${{ inputs.base_sha }}
-          DOC_METADATA_HEAD_SHA: ${{ inputs.head_sha || github.sha }}
-          DOC_METADATA_BEFORE_SHA: ${{ inputs.before_sha }}
-          DOC_METADATA_BASE_REF: ${{ inputs.base_ref }}
-          DOC_METADATA_HEAD_REF: ${{ inputs.head_ref }}
-          DOC_METADATA_REF_NAME: ${{ inputs.ref_name || github.ref_name }}
-          DOC_METADATA_HEAD_REPOSITORY: ${{ inputs.head_repository || github.repository }}
-        run: |
-          $payloadPath = Join-Path $env:GITHUB_WORKSPACE "doc-metadata-effective-event.json"
-          $payloadRef = $null
-          if (-not [string]::IsNullOrWhiteSpace($env:DOC_METADATA_REF_NAME)) {
-            $payloadRef = "refs/heads/$($env:DOC_METADATA_REF_NAME)"
-          }
-
-          $payload = [ordered]@{
-            before = $env:DOC_METADATA_BEFORE_SHA
-            after = $env:DOC_METADATA_HEAD_SHA
-            ref = $payloadRef
-            pull_request = [ordered]@{
-              base = [ordered]@{
-                sha = $env:DOC_METADATA_BASE_SHA
-                ref = $env:DOC_METADATA_BASE_REF
-              }
-              head = [ordered]@{
-                sha = $env:DOC_METADATA_HEAD_SHA
-                ref = $env:DOC_METADATA_HEAD_REF
-                repo = [ordered]@{
-                  full_name = $env:DOC_METADATA_HEAD_REPOSITORY
-                }
-              }
-            }
-          }
-
-          $payload | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $payloadPath -Encoding utf8NoBOM
-          "event_name=$($env:DOC_METADATA_EVENT_NAME)" >> $env:GITHUB_OUTPUT
-          "event_payload_path=$payloadPath" >> $env:GITHUB_OUTPUT
-          "head_sha=$($env:DOC_METADATA_HEAD_SHA)" >> $env:GITHUB_OUTPUT
-          "base_sha=$($env:DOC_METADATA_BASE_SHA)" >> $env:GITHUB_OUTPUT
-          "before_sha=$($env:DOC_METADATA_BEFORE_SHA)" >> $env:GITHUB_OUTPUT
-          "base_ref=$($env:DOC_METADATA_BASE_REF)" >> $env:GITHUB_OUTPUT
-          "head_ref=$($env:DOC_METADATA_HEAD_REF)" >> $env:GITHUB_OUTPUT
-          "ref_name=$($env:DOC_METADATA_REF_NAME)" >> $env:GITHUB_OUTPUT
-          "head_repository=$($env:DOC_METADATA_HEAD_REPOSITORY)" >> $env:GITHUB_OUTPUT
-
       - name: Analyze repairable files
-        id: repair_paths
         shell: pwsh
         working-directory: work
         run: |
-          $repairPathsPath = Join-Path $env:RUNNER_TEMP "doc-metadata-repair-paths.txt"
-
           ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 `
             -Mode Analyze `
             -Root . `
-            -EventName "${{ steps.invocation.outputs.event_name }}" `
-            -EventPayloadPath "${{ steps.invocation.outputs.event_payload_path }}" `
-            -HeadSha "${{ inputs.head_sha || github.sha }}" `
+            -EventName "${{ github.event_name }}" `
+            -EventPayloadPath "${{ github.event_path }}" `
+            -HeadSha "${{ github.sha }}" `
             -ReportOutputPath doc-metadata-repair-analyze-report.json
 
           $report = Get-Content -LiteralPath doc-metadata-repair-analyze-report.json -Raw | ConvertFrom-Json -Depth 32
           $paths = @($report.analysis.repairableFiles | ForEach-Object { $_.path } | Sort-Object -Unique)
-          $paths | Set-Content -LiteralPath $repairPathsPath -Encoding utf8NoBOM
-          "repair_paths_path=$repairPathsPath" >> $env:GITHUB_OUTPUT
+          $paths | Set-Content -LiteralPath doc-metadata-repair-paths.txt -Encoding utf8NoBOM
 
       - name: Resolve content-change links
-        id: content_links
         shell: pwsh
         working-directory: work
         run: |
-          $linkMapPath = Join-Path $env:RUNNER_TEMP "doc-metadata-links.json"
-
           ../trusted/.github/scripts/doc-metadata/resolve-content-change-links.ps1 `
             -Root . `
             -MetadataScriptPath ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 `
-            -PathListPath "${{ steps.repair_paths.outputs.repair_paths_path }}" `
-            -EventName "${{ steps.invocation.outputs.event_name }}" `
-            -EventPayloadPath "${{ steps.invocation.outputs.event_payload_path }}" `
+            -PathListPath doc-metadata-repair-paths.txt `
+            -EventName "${{ github.event_name }}" `
+            -EventPayloadPath "${{ github.event_path }}" `
             -Repository "${{ github.repository }}" `
             -ServerUrl "${{ github.server_url }}" `
-            -OutputPath $linkMapPath
-
-          "link_map_path=$linkMapPath" >> $env:GITHUB_OUTPUT
+            -OutputPath doc-metadata-links.json
 
       - name: Repair document metadata
         id: repair
         shell: pwsh
         working-directory: work
         run: |
-          $repairPathsPath = "${{ steps.repair_paths.outputs.repair_paths_path }}"
-          $linkMapPath = "${{ steps.content_links.outputs.link_map_path }}"
-
-          $paths = @(Get-Content -LiteralPath $repairPathsPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+          $paths = @(Get-Content -LiteralPath doc-metadata-repair-paths.txt | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
           if ($paths.Count -eq 0) {
             "changed=false" >> $env:GITHUB_OUTPUT
             exit 0
@@ -470,10 +258,10 @@ jobs:
             -Mode Update `
             -Root . `
             -Path $paths `
-            -EventName "${{ steps.invocation.outputs.event_name }}" `
-            -EventPayloadPath "${{ steps.invocation.outputs.event_payload_path }}" `
-            -HeadSha "${{ inputs.head_sha || github.sha }}" `
-            -HistoryLinkMapPath $linkMapPath `
+            -EventName "${{ github.event_name }}" `
+            -EventPayloadPath "${{ github.event_path }}" `
+            -HeadSha "${{ github.sha }}" `
+            -HistoryLinkMapPath doc-metadata-links.json `
             -ChangedFilesOutputPath doc-metadata-changed-files.json `
             -ReportOutputPath doc-metadata-repair-report.json
 
@@ -499,12 +287,12 @@ jobs:
         run: |
           $head = (git rev-parse HEAD).Trim()
           $base = $null
-          if ("${{ steps.invocation.outputs.event_name }}" -eq "pull_request") {
-            $eventBase = "${{ inputs.base_sha }}"
+          if ("${{ github.event_name }}" -eq "pull_request") {
+            $eventBase = "${{ github.event.pull_request.base.sha }}"
             $base = (git merge-base $eventBase $head).Trim()
           }
-          elseif ("${{ steps.invocation.outputs.event_name }}" -eq "push") {
-            $payload = Get-Content -LiteralPath "${{ steps.invocation.outputs.event_payload_path }}" -Raw | ConvertFrom-Json -Depth 64
+          elseif ("${{ github.event_name }}" -eq "push") {
+            $payload = Get-Content -LiteralPath "${{ github.event_path }}" -Raw | ConvertFrom-Json -Depth 64
             if ($payload.before -and $payload.before -notmatch '^0{40}$') {
               $base = $payload.before
             }
@@ -597,32 +385,21 @@ jobs:
             $postReport = Get-Content -LiteralPath doc-metadata-post-check-report.json -Raw | ConvertFrom-Json -Depth 32
           }
 
-          $incrementedRows = @()
+          $updatedRows = @()
           $initializedRows = @()
-          $metadataRepairRows = @()
           $skippedRows = @()
           if ($null -ne $repairReport) {
+            $updatedRows = @($repairReport.updatedFiles | ForEach-Object {
+              [pscustomobject]@{
+                Path = $_.path
+                OldVersion = $_.oldVersion
+                NewVersion = $_.newVersion
+                Reason = $_.reason
+              }
+            })
             $initializedRows = @($repairReport.updatedFiles | Where-Object { $_.reason -match "initialized|new governed file|missing metadata" } | ForEach-Object {
               [pscustomobject]@{
                 Path = $_.path
-                NewVersion = $_.newVersion
-                Reason = $_.reason
-              }
-            })
-            $incrementedRows = @($repairReport.updatedFiles | Where-Object { $_.reason -match "body changed" } | ForEach-Object {
-              [pscustomobject]@{
-                Path = $_.path
-                OldVersion = $_.oldVersion
-                NewVersion = $_.newVersion
-                Reason = $_.reason
-              }
-            })
-            $metadataRepairRows = @($repairReport.updatedFiles | Where-Object {
-              $_.reason -notmatch "initialized|new governed file|missing metadata" -and $_.reason -notmatch "body changed"
-            } | ForEach-Object {
-              [pscustomobject]@{
-                Path = $_.path
-                OldVersion = $_.oldVersion
                 NewVersion = $_.newVersion
                 Reason = $_.reason
               }
@@ -659,17 +436,17 @@ jobs:
             throw "git rev-parse HEAD failed."
           }
 
-          $repairBranch = if ("${{ steps.invocation.outputs.event_name }}" -eq "pull_request") {
-            "${{ inputs.head_ref }}"
+          $repairBranch = if ("${{ github.event_name }}" -eq "pull_request") {
+            "${{ github.event.pull_request.head.ref }}"
           }
           else {
             "${{ steps.branch.outputs.repair_branch }}"
           }
-          $targetBranch = if ("${{ steps.invocation.outputs.event_name }}" -eq "pull_request") {
-            "${{ inputs.base_ref }}"
+          $targetBranch = if ("${{ github.event_name }}" -eq "pull_request") {
+            "${{ github.base_ref }}"
           }
           else {
-            "${{ inputs.ref_name || github.ref_name }}"
+            "${{ github.ref_name }}"
           }
 
           $builder = [System.Text.StringBuilder]::new()
@@ -683,10 +460,10 @@ jobs:
           [void] $builder.AppendLine("- Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
           [void] $builder.AppendLine("- Run ID: ${{ github.run_id }}")
           [void] $builder.AppendLine("- Run number: ${{ github.run_number }}")
-          [void] $builder.AppendLine("- Event: ${{ steps.invocation.outputs.event_name }}")
+          [void] $builder.AppendLine("- Event: ${{ github.event_name }}")
           [void] $builder.AppendLine("- Actor: ${{ github.actor }}")
           [void] $builder.AppendLine("- Target branch: $targetBranch")
-          [void] $builder.AppendLine("- Source SHA: ${{ inputs.head_sha || github.sha }}")
+          [void] $builder.AppendLine("- Source SHA: ${{ github.sha }}")
           [void] $builder.AppendLine("- Repair branch: $repairBranch")
           [void] $builder.AppendLine("- Repair commit SHA: $repairCommitSha")
           [void] $builder.AppendLine("- Post-repair Check result: ${{ steps.post_check.outcome }}")
@@ -695,14 +472,13 @@ jobs:
           [void] $builder.AppendLine("> The repair commit was created by GitHub Actions using `GITHUB_TOKEN`. GitHub may not trigger every follow-up workflow from `GITHUB_TOKEN` commits, so this workflow runs its own post-repair Check and reports the result here.")
           [void] $builder.AppendLine()
 
-          Add-Table -Builder $builder -Title "Incremented files" -Headers @("Path", "OldVersion", "NewVersion", "Reason") -Rows $incrementedRows
+          Add-Table -Builder $builder -Title "Repaired files" -Headers @("Path", "OldVersion", "NewVersion", "Reason") -Rows $updatedRows
           Add-Table -Builder $builder -Title "Initialized files" -Headers @("Path", "NewVersion", "Reason") -Rows $initializedRows
-          Add-Table -Builder $builder -Title "Metadata repair files" -Headers @("Path", "OldVersion", "NewVersion", "Reason") -Rows $metadataRepairRows
           Add-Table -Builder $builder -Title "Skipped files" -Headers @("Path", "Reason") -Rows $skippedRows
           Add-Table -Builder $builder -Title "Remaining failed files" -Headers @("Path", "Rule", "Expected") -Rows $failedRows
           Add-Table -Builder $builder -Title "Remaining unrecoverable files" -Headers @("Path", "Reason", "Expected") -Rows $unrecoverableRows
 
-          $bodyPath = Join-Path $env:RUNNER_TEMP "doc-metadata-repair-summary.md"
+          $bodyPath = "doc-metadata-repair-summary.md"
           $builder.ToString() | Set-Content -LiteralPath $bodyPath -Encoding utf8NoBOM
           if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_STEP_SUMMARY)) {
             Get-Content -LiteralPath $bodyPath -Raw | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
@@ -710,7 +486,7 @@ jobs:
           "body_path=$bodyPath" >> $env:GITHUB_OUTPUT
 
       - name: Push repair to pull request branch
-        if: (inputs.event_name || github.event_name) == 'pull_request' && steps.repair.outputs.changed == 'true'
+        if: github.event_name == 'pull_request' && steps.repair.outputs.changed == 'true'
         shell: bash
         working-directory: work
         env:
@@ -718,17 +494,17 @@ jobs:
         run: |
           set -euo pipefail
           remote_url="https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
-          git fetch --no-tags "$remote_url" "+refs/heads/${{ inputs.head_ref }}:refs/remotes/origin/${{ inputs.head_ref }}"
-          commit_count="$(git rev-list --count "origin/${{ inputs.head_ref }}..HEAD")"
+          git fetch --no-tags "$remote_url" "+refs/heads/${{ github.event.pull_request.head.ref }}:refs/remotes/origin/${{ github.event.pull_request.head.ref }}"
+          commit_count="$(git rev-list --count "origin/${{ github.event.pull_request.head.ref }}..HEAD")"
           if [[ "$commit_count" == "0" ]]; then
             echo "No repair commits remain relative to the pull request branch; skipping repair push." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          git push "$remote_url" "HEAD:${{ inputs.head_ref }}"
+          git push "$remote_url" "HEAD:${{ github.event.pull_request.head.ref }}"
 
       - name: Push bot repair branch and create or update pull request
         id: bot_pr
-        if: (inputs.event_name || github.event_name) != 'pull_request' && steps.repair.outputs.changed == 'true'
+        if: github.event_name != 'pull_request' && steps.repair.outputs.changed == 'true'
         shell: pwsh
         working-directory: work
         env:
@@ -753,11 +529,11 @@ jobs:
           }
 
           $repairBranch = "${{ steps.branch.outputs.repair_branch }}"
-          $targetBranch = "${{ inputs.ref_name || github.ref_name }}"
+          $targetBranch = "${{ github.ref_name }}"
           $remoteUrl = "https://x-access-token:${env:GH_TOKEN}@github.com/${{ github.repository }}.git"
           $bodyPath = "${{ steps.repair_report_summary.outputs.body_path }}"
           if ([string]::IsNullOrWhiteSpace($bodyPath)) {
-            $bodyPath = Join-Path $env:RUNNER_TEMP "doc-metadata-repair-summary.md"
+            $bodyPath = "doc-metadata-repair-summary.md"
           }
 
           Invoke-Native -FileName "git" -Arguments @("fetch", "--no-tags", $remoteUrl, "+refs/heads/${targetBranch}:refs/remotes/origin/$targetBranch")
@@ -829,7 +605,7 @@ jobs:
           $repairedFiles = "${{ needs.repair-document-metadata.outputs.repaired_files }}"
           $remainingFailedFiles = "${{ needs.repair-document-metadata.outputs.remaining_failed_files }}"
           $remainingUnrecoverableFiles = "${{ needs.repair-document-metadata.outputs.remaining_unrecoverable_files }}"
-          $isRepairBranch = "${{ ((inputs.event_name || github.event_name) == 'pull_request' && startsWith(inputs.head_ref, 'codex/doc-metadata-repair/')) || ((inputs.event_name || github.event_name) != 'pull_request' && startsWith(inputs.ref_name || github.ref_name, 'codex/doc-metadata-repair/')) }}"
+          $isRepairBranch = "${{ (github.event_name == 'pull_request' && startsWith(github.head_ref, 'codex/doc-metadata-repair/')) || (github.event_name != 'pull_request' && startsWith(github.ref_name, 'codex/doc-metadata-repair/')) }}"
 
           if ($unrecoverableFailure -eq "true") {
             Write-Error "Document metadata has unrecoverable failures. Review the analyze report."
