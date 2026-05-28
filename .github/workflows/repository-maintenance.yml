@@ -90,7 +90,7 @@ jobs:
             $eventName -eq "schedule" -or
             ($eventName -eq "push" -and $refType -eq "branch" -and $refName -eq $defaultBranch) -or
             ($eventName -eq "pull_request" -and $baseRef -eq $defaultBranch) -or
-            ($eventName -eq "workflow_dispatch" -and $refName -eq $defaultBranch)
+            ($eventName -eq "workflow_dispatch" -and $refType -eq "branch" -and $refName -eq $defaultBranch)
 
           $eventPayload = switch ($eventName) {
             "pull_request" {
