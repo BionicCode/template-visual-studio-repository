@@ -31,6 +31,15 @@ It does not inline the shared sync engine. Instead, it preserves local manifest 
 4. `init-managed-file-sync` delegates manifest initialization to the shared workflow when initialization is needed.
 5. `sync-managed-files` delegates synchronization to the shared workflow when the manifest exists.
 
+## Examples
+
+| Scenario | What happens | Result |
+| --- | --- | --- |
+| Manifest exists during an in-scope run | `inspect-manifest` finds `.github/tools/sync-config/sync-manifest.json` and exposes its JSON content. | The wrapper delegates `command: sync` to the shared workflow. |
+| Manifest missing on a pull request | `inspect-manifest` reports `manifest_exists=false` and the PR-specific failure job runs. | The workflow fails with an explicit error instead of trying to initialize during PR validation. |
+| Manifest missing on a default-branch maintenance run | A scheduled run or default-branch push/manual run reaches `init-managed-file-sync` when the manifest is absent. | The wrapper delegates `command: init` to the shared workflow so the manifest can be initialized. |
+| Direct manual run from the default branch | `workflow_dispatch` is allowed only when the effective context is a branch and that branch is the repository default branch. | The wrapper can inspect, initialize, or sync managed files, depending on whether the manifest exists. |
+
 ## Inputs
 
 ### `workflow_call` inputs
@@ -40,6 +49,7 @@ It does not inline the shared sync engine. Instead, it preserves local manifest 
 | `effective_event_name` | Effective event type used for wrapper routing decisions. |
 | `default_branch` | Effective default branch for branch-context checks. |
 | `ref_name` | Effective ref name used by manual and push/default-branch checks. |
+| `ref_type` | Effective ref type used to keep direct manual default-branch checks branch-only. |
 | `base_ref` | Effective pull request base branch used by PR scope checks. |
 | `pull_request_number` | Effective PR number used for concurrency scoping. |
 
@@ -63,6 +73,7 @@ This workflow currently defines no custom manual-dispatch inputs.
 - The wrapper preserves inspect/init/sync behavior visible from this repository.
 - PR validation still fails when the manifest is missing.
 - Sync still forwards the required secret to the shared workflow where the local wrapper currently uses it.
+- Direct `workflow_dispatch` default-branch checks are branch-only and do not treat tag refs as eligible manual maintenance context.
 
 > [!IMPORTANT]
 > Keep the local wrapper role intact. Do not inline the shared workflow logic here unless that architecture is intentionally being changed.

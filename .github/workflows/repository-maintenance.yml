@@ -23,6 +23,7 @@ jobs:
       event_payload_json: ${{ steps.normalize.outputs.event_payload_json }}
       default_branch: ${{ steps.normalize.outputs.default_branch }}
       ref_name: ${{ steps.normalize.outputs.ref_name }}
+      ref_type: ${{ steps.normalize.outputs.ref_type }}
       ref: ${{ steps.normalize.outputs.ref }}
       sha: ${{ steps.normalize.outputs.sha }}
       base_ref: ${{ steps.normalize.outputs.base_ref }}
@@ -119,6 +120,7 @@ jobs:
             event_payload_json = $eventPayloadJson
             default_branch = $defaultBranch
             ref_name = $refName
+            ref_type = $refType
             ref = $ref
             sha = $sha
             base_ref = $baseRef
@@ -172,6 +174,7 @@ jobs:
       effective_event_name: ${{ needs.normalize.outputs.event_name }}
       default_branch: ${{ needs.normalize.outputs.default_branch }}
       ref_name: ${{ needs.normalize.outputs.ref_name }}
+      ref_type: ${{ needs.normalize.outputs.ref_type }}
       base_ref: ${{ needs.normalize.outputs.base_ref }}
       pull_request_number: ${{ needs.normalize.outputs.pull_request_number }}
     secrets: inherit

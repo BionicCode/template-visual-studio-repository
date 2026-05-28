@@ -29,6 +29,15 @@ It preserves the local document-metadata workflow behavior while accepting norma
 2. `repair-document-metadata` runs only when repair is required, safe, and allowed for the current repository context.
 3. `final-document-metadata-status` gates the overall result and preserves the workflow's final status semantics.
 
+## Examples
+
+| Scenario | What happens | Result |
+| --- | --- | --- |
+| Pull request metadata validation | The orchestrator calls this workflow with normalized PR base/head context so the analyze job can compare the PR head against the PR base safely. | The workflow reports whether governed metadata is valid before sync is allowed to proceed. |
+| Safe automatic repair on a same-repository pull request | When analysis reports `repair_required == true` and `repair_safe == true`, the repair job checks out the PR branch, applies metadata-only repairs, commits them, and pushes back to the PR branch. | The PR is updated in place and the final status reflects the post-repair check result. |
+| Branch-based repair PR creation for non-PR runs | On branch-based runs outside `pull_request`, the repair job creates a deterministic `codex/doc-metadata-repair/<safe-target>-<hash>` branch, publishes it, and creates or updates a repair PR. | Maintainers get a repair PR instead of an in-place branch mutation on the source branch. |
+| Recursion guard on `codex/doc-metadata-repair/*` | If the current branch is already a doc-metadata repair branch, the workflow still analyzes metadata but skips repair publishing. | The run avoids repair-branch recursion and fails the final status if repair is still required. |
+
 ## Inputs
 
 ### `workflow_call` inputs

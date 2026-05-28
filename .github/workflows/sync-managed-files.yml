@@ -15,6 +15,10 @@ on:
         type: string
         required: false
         default: ""
+      ref_type:
+        type: string
+        required: false
+        default: ""
       base_ref:
         type: string
         required: false
@@ -32,6 +36,7 @@ env:
   EFFECTIVE_EVENT_NAME: ${{ inputs.effective_event_name != '' && inputs.effective_event_name || github.event_name }}
   EFFECTIVE_DEFAULT_BRANCH: ${{ inputs.default_branch != '' && inputs.default_branch || github.event.repository.default_branch }}
   EFFECTIVE_REF_NAME: ${{ inputs.ref_name != '' && inputs.ref_name || github.ref_name }}
+  EFFECTIVE_REF_TYPE: ${{ inputs.ref_type != '' && inputs.ref_type || github.ref_type }}
   EFFECTIVE_BASE_REF: ${{ inputs.base_ref != '' && inputs.base_ref || github.base_ref }}
 
 concurrency:
@@ -42,7 +47,8 @@ jobs:
   reject-non-default-manual-run:
     if: >
       (inputs.effective_event_name != '' && inputs.effective_event_name || github.event_name) == 'workflow_dispatch' &&
-      ((inputs.ref_name != '' && inputs.ref_name) || github.ref_name) != ((inputs.default_branch != '' && inputs.default_branch) || github.event.repository.default_branch)
+      (((inputs.ref_type != '' && inputs.ref_type) || github.ref_type) != 'branch' ||
+      ((inputs.ref_name != '' && inputs.ref_name) || github.ref_name) != ((inputs.default_branch != '' && inputs.default_branch) || github.event.repository.default_branch))
     runs-on: ubuntu-latest
     permissions: {}
 
@@ -58,7 +64,7 @@ jobs:
       (inputs.effective_event_name != '' && inputs.effective_event_name || github.event_name) == 'schedule' ||
       ((inputs.effective_event_name != '' && inputs.effective_event_name || github.event_name) == 'push' && (((inputs.ref_name != '' && inputs.ref_name) || github.ref_name) == ((inputs.default_branch != '' && inputs.default_branch) || github.event.repository.default_branch))) ||
       ((inputs.effective_event_name != '' && inputs.effective_event_name || github.event_name) == 'pull_request' && (((inputs.base_ref != '' && inputs.base_ref) || github.base_ref) == ((inputs.default_branch != '' && inputs.default_branch) || github.event.repository.default_branch))) ||
-      ((inputs.effective_event_name != '' && inputs.effective_event_name || github.event_name) == 'workflow_dispatch' && (((inputs.ref_name != '' && inputs.ref_name) || github.ref_name) == ((inputs.default_branch != '' && inputs.default_branch) || github.event.repository.default_branch)))
+      ((inputs.effective_event_name != '' && inputs.effective_event_name || github.event_name) == 'workflow_dispatch' && (((inputs.ref_type != '' && inputs.ref_type) || github.ref_type) == 'branch') && (((inputs.ref_name != '' && inputs.ref_name) || github.ref_name) == ((inputs.default_branch != '' && inputs.default_branch) || github.event.repository.default_branch)))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -114,7 +120,7 @@ jobs:
     if: >
       needs.inspect-manifest.outputs.manifest_exists != 'true' &&
       (inputs.effective_event_name != '' && inputs.effective_event_name || github.event_name) != 'pull_request' &&
-      ((inputs.effective_event_name != '' && inputs.effective_event_name || github.event_name) == 'schedule' || (((inputs.ref_name != '' && inputs.ref_name) || github.ref_name) == ((inputs.default_branch != '' && inputs.default_branch) || github.event.repository.default_branch)))
+      ((inputs.effective_event_name != '' && inputs.effective_event_name || github.event_name) == 'schedule' || ((((inputs.ref_type != '' && inputs.ref_type) || github.ref_type) == 'branch') && (((inputs.ref_name != '' && inputs.ref_name) || github.ref_name) == ((inputs.default_branch != '' && inputs.default_branch) || github.event.repository.default_branch))))
     permissions:
       contents: write
       pull-requests: write

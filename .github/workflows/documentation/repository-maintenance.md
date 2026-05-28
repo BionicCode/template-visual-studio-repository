@@ -56,9 +56,19 @@ The orchestrator computes and forwards normalized values such as the effective e
 
 | Output family | Used by | Purpose |
 | --- | --- | --- |
-| Effective event/ref context | Both child workflows | Keeps reusable workflows from depending on implicit caller event context. |
+| Effective event/ref context | Both child workflows | Keeps reusable workflows from depending on implicit caller event context, including normalized branch vs tag context for direct dispatch decisions. |
 | PR base/head context | `doc-metadata.yml` | Preserves existing metadata comparison and repair routing behavior. |
 | Scope booleans | Orchestrator jobs | Determines whether each child workflow should run for the current event. |
+
+## Examples
+
+| Scenario | Trigger context | `doc-metadata` | `sync-managed-files` | Notes |
+| --- | --- | --- | --- | --- |
+| Pull request targeting the default branch | `pull_request` with `base_ref == default_branch` | Runs | Runs after doc-metadata succeeds | This is the full orchestrated maintenance path for PRs into the default branch. |
+| Push to `main` or `master` | `push` on a branch named `main` or `master` | Runs | Runs only when the pushed branch is also the repository default branch | Doc-metadata accepts either common primary branch name. Sync remains tied to the actual configured default branch. |
+| Scheduled maintenance | `schedule` with `17 3 * * *` | Skips | Runs | The schedule is daily at 03:17 UTC and is owned only by this orchestrator. |
+| Manual run from the default branch | `workflow_dispatch` with `ref_type == 'branch'` and `ref_name == default_branch` | Runs | Runs after doc-metadata succeeds | This is the supported direct maintenance entry point for a full manual run. |
+| Manual run from a non-default branch | `workflow_dispatch` with `ref_type == 'branch'` and `ref_name != default_branch` | Runs | Skips | This supports targeted metadata maintenance without manifest sync. |
 
 ## Permissions and secrets
 
