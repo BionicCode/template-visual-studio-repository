@@ -925,16 +925,20 @@ Invoke-Test "GitHub summary and changed-files output contracts remain stable" {
 Invoke-Test "Workflow preserves repair design and deterministic branch hash" {
     $workflow = Get-Content -LiteralPath $WorkflowPath -Raw
     $resolver = Get-Content -LiteralPath (Join-Path $ToolingSource "resolve-content-change-links.ps1") -Raw
+    $manifest = Read-JsonFile (Join-Path $PublicSurfaceSource "doc-metadata-manifest.json")
 
     Assert-True ($workflow -match "analyze-document-metadata") "Workflow should include analyze job."
     Assert-True ($workflow -match "repair-document-metadata") "Workflow should include repair job."
     Assert-True ($workflow -match "final-document-metadata-status") "Workflow should include final status job."
+    Assert-True ($workflow -match "concurrency:\s*\r?\n\s+group:\s*\$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}\s*\r?\n\s+cancel-in-progress:\s*true") "Workflow should cancel stale runs for the same PR/ref."
     Assert-True ($workflow -notmatch "(?m)^\s+paths:\s*$") "Workflow must not use narrow paths filters that can miss manifest-governed files."
     Assert-True ($workflow -notmatch '"README\.md"|\"docs/\*\*\"|\"specs/\*\*\"') "Workflow should not duplicate manifest include patterns as trigger filters."
     Assert-True ($workflow -match "analyze-document-metadata:[\s\S]*?permissions:\s*\r?\n\s+contents: read") "Analyze job should use contents: read."
     Assert-True ($workflow -match "repair-document-metadata:[\s\S]*?permissions:\s*\r?\n\s+contents: write\s*\r?\n\s+pull-requests: write") "Repair job should have write permissions only in repair job."
     Assert-True ($workflow -notmatch "pull_request_target") "Workflow must not use pull_request_target."
     Assert-True ($workflow -match "path: trusted" -and $workflow -match "path: work") "Workflow should use trusted/work checkout layout."
+    Assert-True ($workflow -match "startsWith\(github\.head_ref, 'codex/doc-metadata-repair/'\)" -and $workflow -match "startsWith\(github\.ref_name, 'codex/doc-metadata-repair/'\)") "Workflow should guard recursive doc-metadata repair branches."
+    Assert-True ($workflow -match "Repair publishing skipped because this run is already on a doc-metadata repair branch") "Workflow should report repair-branch publishing skips."
     Assert-True ($workflow -match 'codex/doc-metadata-repair/\$safeTarget-\$hash') "Workflow should use the required repair branch prefix and hash suffix."
     Assert-True ($workflow -match "SHA256" -and $workflow -match "ToHexString" -and $workflow -match "Substring\(0, 12\)") "Workflow should construct a stable SHA-256 branch hash."
     Assert-True ($workflow -notmatch 'doc-metadata/repair/\$safeTarget') "Workflow must not use the old repair branch prefix."
@@ -946,6 +950,17 @@ Invoke-Test "Workflow preserves repair design and deterministic branch hash" {
     Assert-True (-not $workflow.Contains('${{ github.event.pull_request.head.sha || github.sha }}')) "Workflow must not assign one event head commit URL to every file."
     Assert-True ($workflow -match "doc-metadata-post-check-report.json") "Workflow should write a post-repair Check report."
     Assert-True ($workflow -match "Remaining invalid files" -and $workflow -match "Remaining unrecoverable files") "Final status should list remaining post-repair failures."
+    Assert-True ($workflow -match "actions/runs/\$\{\{ github\.run_id \}\}" -and $workflow -match "Run ID: \$\{\{ github\.run_id \}\}") "Repair PR body should include workflow run traceability."
+    Assert-True ($workflow -match "Repaired files" -and $workflow -match "Initialized files" -and $workflow -match "Skipped files" -and $workflow -match "Remaining failed files" -and $workflow -match "Remaining unrecoverable files") "Repair PR body should include repaired, skipped, failed, and unrecoverable report sections."
+    Assert-True ($workflow -match "doc-metadata-repair-summary\.md" -and $workflow -match 'Get-Content -LiteralPath \$bodyPath -Raw \| Add-Content -LiteralPath \$env:GITHUB_STEP_SUMMARY' -and $workflow -match '--body-file", \$bodyPath') "Workflow summary and PR body should use the same generated report file."
+    Assert-True ($workflow -match 'rev-list", "--count", "origin/\$targetBranch\.\.HEAD"' -and $workflow -match "skipping repair branch push and PR creation") "Bot PR publishing should skip clean repair branches with no commits."
+    Assert-True ($workflow -match '--force-with-lease=refs/heads/\$\{repairBranch\}:\$remoteSha') "Existing repair branch pushes should use an explicit force-with-lease tied to the observed remote SHA."
+    Assert-True ($workflow -match 'Invoke-Native -FileName "git" -Arguments @\("push", \$remoteUrl, "HEAD:refs/heads/\$repairBranch"\)') "New repair branch pushes should use a normal push."
+    $pushIndex = $workflow.IndexOf('Invoke-Native -FileName "git" -Arguments @("push"')
+    $ghCreateIndex = $workflow.IndexOf('Invoke-Native -FileName "gh" -Arguments @("pr", "create"')
+    Assert-True ($pushIndex -ge 0 -and $ghCreateIndex -gt $pushIndex -and $workflow -match 'throw "\$FileName \$\(\$Arguments -join') "PR creation should be unreachable after a failed guarded native push."
+    Assert-True (@($manifest.include) -contains ".github/tools/sync-config/documentation/**/*.md") "This patch must not remove sync-config documentation from doc-metadata governance."
+    Assert-True ($workflow -notmatch "sync-managed-files") "Doc-metadata workflow patch should not alter sync-managed-files behavior."
     Assert-True ($resolver -match '"-Mode", "ContentChanges"' -or $resolver -match "-Mode ContentChanges") "Resolver should use ContentChanges mode as its source of managed-body truth."
     Assert-True ($resolver -match "parents.Count -gt 1" -and $resolver -match "Skipping ambiguous merge commit") "Resolver should not guess for ambiguous merge-parent commits."
 }

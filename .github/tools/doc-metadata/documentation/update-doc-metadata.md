@@ -1,7 +1,7 @@
 ---
-Version: 8
+Version: 9
 Created: 2026-05-26T19:08:33+00:00
-Updated: 2026-05-27T20:10:00+00:00
+Updated: 2026-05-28T06:35:17+00:00
 Author: BionicCode
 ---
 <!-- doc-metadata-presentation:start -->
@@ -92,13 +92,13 @@ The current-version link and the collapsed Change History are generated metadata
 
 ## Common Workflows
 
-Same-repository pull request: Analyze runs read-only. If repair is safe, Repair pushes one metadata commit to the PR branch, then runs Check again because `GITHUB_TOKEN` commits may not trigger all follow-up workflows.
+Same-repository pull request: Analyze runs read-only. If repair is safe, Repair pushes one metadata commit to the PR branch, then runs Check again because `GITHUB_TOKEN` commits may not trigger all follow-up workflows. Runs on `codex/doc-metadata-repair/` branches skip repair publishing so repair PRs do not recursively create more repair PRs.
 
 For pull requests, content history is based on the PR base/head comparison. The repair commit is treated as metadata maintenance unless it also contains the document body change.
 
 Fork pull request: Analyze reports only. The workflow does not run write-capable repair for forks.
 
-Direct push to default branch: Analyze classifies metadata state. Safe repair creates or updates a deterministic bot branch and repair PR instead of pushing to main.
+Direct push to default branch: Analyze classifies metadata state. Safe repair creates or updates a deterministic bot branch and repair PR instead of pushing to main. The bot branch uses the `codex/doc-metadata-repair/<target>-<hash>` naming convention, and the workflow uses concurrency plus conservative `--force-with-lease` publishing so older runs do not race newer repair updates.
 
 For push events, content history is based on the pushed `before..after` range. A later metadata repair commit is not used as the content-change reference.
 
@@ -165,7 +165,9 @@ Existing committed history URLs are not re-fetched every run. Integrity is check
 
 ## Final Status
 
-The workflow has Analyze, Repair, post-repair Check, and Final Status stages. A successful repair followed by a passing post-repair Check should produce a passing final status.
+The workflow has Analyze, Repair, post-repair Check, and Final Status stages. A successful repair followed by a passing post-repair Check should produce a passing final status. The repair job generates one Markdown report source that is appended to the GitHub step summary and reused as the repair PR body.
+
+Repair PR bodies include the workflow run URL, run ID, run number, event, actor, target branch, source SHA, repair branch, repair commit SHA, repaired files, initialized files, skipped files, remaining failed files, remaining unrecoverable files, and the post-repair Check result. This makes each repair PR traceable to the exact workflow run that produced it.
 
 If final status fails after a repair, it lists the repaired files, remaining invalid files, and remaining unrecoverable files from the post-repair Check report. The repair may have succeeded for one file while other governed files still have unrepaired or unrecoverable metadata failures.
 

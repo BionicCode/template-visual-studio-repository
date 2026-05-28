@@ -9,8 +9,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: doc-metadata-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   analyze-document-metadata:
@@ -111,13 +111,23 @@ jobs:
           "unrecoverable_failure=$($report.analysis.unrecoverableFailure.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           "report_path=$reportPath" >> $env:GITHUB_OUTPUT
 
+      - name: Report repair branch publishing guard
+        if: >
+          (github.event_name == 'pull_request' && startsWith(github.head_ref, 'codex/doc-metadata-repair/')) ||
+          (github.event_name != 'pull_request' && startsWith(github.ref_name, 'codex/doc-metadata-repair/'))
+        shell: pwsh
+        run: |
+          "Repair publishing skipped because this run is already on a doc-metadata repair branch." >> $env:GITHUB_STEP_SUMMARY
+
   repair-document-metadata:
     name: Repair document metadata
     needs: analyze-document-metadata
     if: >
       needs.analyze-document-metadata.outputs.repair_required == 'true' &&
       needs.analyze-document-metadata.outputs.repair_safe == 'true' &&
-      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+      !((github.event_name == 'pull_request' && startsWith(github.head_ref, 'codex/doc-metadata-repair/')) ||
+      (github.event_name != 'pull_request' && startsWith(github.ref_name, 'codex/doc-metadata-repair/')))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -269,50 +279,6 @@ jobs:
           git commit -m "chore(doc-metadata): repair governed metadata"
           "changed=true" >> $env:GITHUB_OUTPUT
 
-      - name: Push repair to pull request branch
-        if: github.event_name == 'pull_request' && steps.repair.outputs.changed == 'true'
-        shell: bash
-        working-directory: work
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          git push "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:${{ github.event.pull_request.head.ref }}"
-
-      - name: Push bot repair branch and create or update pull request
-        id: bot_pr
-        if: github.event_name != 'pull_request' && steps.repair.outputs.changed == 'true'
-        shell: pwsh
-        working-directory: work
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $repairBranch = "${{ steps.branch.outputs.repair_branch }}"
-          $targetBranch = "${{ github.ref_name }}"
-          git push --force-with-lease "https://x-access-token:${env:GH_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:$repairBranch"
-
-          $bodyPath = "doc-metadata-pr-body.md"
-          @"
-          ## Summary
-          This PR repairs repository-owned document metadata for governed files.
-
-          ## Notes
-          - The repair commit was created by GitHub Actions using `GITHUB_TOKEN`.
-          - GitHub may not trigger every follow-up workflow from `GITHUB_TOKEN` commits.
-          - The repair workflow ran its own post-repair Check before reporting success.
-
-          See the workflow summary for the structured repair report.
-          "@ | Set-Content -LiteralPath $bodyPath -Encoding utf8NoBOM
-
-          $existing = gh pr list --head $repairBranch --base $targetBranch --json number --jq '.[0].number'
-          if ([string]::IsNullOrWhiteSpace($existing)) {
-            gh pr create --head $repairBranch --base $targetBranch --title "Repair document metadata" --body-file $bodyPath
-          }
-          else {
-            gh pr edit $existing --title "Repair document metadata" --body-file $bodyPath
-            gh pr view $existing --json url --jq '.url'
-          }
-
       - name: Post-repair Check
         id: post_check
         continue-on-error: true
@@ -368,6 +334,250 @@ jobs:
           "remaining_failed_files=$(Join-UniqueValues $failed)" >> $env:GITHUB_OUTPUT
           "remaining_unrecoverable_files=$(Join-UniqueValues $unrecoverable)" >> $env:GITHUB_OUTPUT
 
+      - name: Build repair report summary
+        id: repair_report_summary
+        if: always()
+        shell: pwsh
+        working-directory: work
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          function ConvertTo-SafeCell {
+            param([object] $Value)
+            if ($null -eq $Value) { return "" }
+            ([string] $Value).Replace("|", "\|")
+          }
+
+          function Add-Table {
+            param(
+              [System.Text.StringBuilder] $Builder,
+              [string] $Title,
+              [string[]] $Headers,
+              [object[]] $Rows
+            )
+
+            [void] $Builder.AppendLine("## $Title")
+            [void] $Builder.AppendLine()
+            if ($Rows.Count -eq 0) {
+              [void] $Builder.AppendLine("_None_")
+              [void] $Builder.AppendLine()
+              return
+            }
+
+            [void] $Builder.AppendLine("| $($Headers -join " | ") |")
+            [void] $Builder.AppendLine("| $((@($Headers | ForEach-Object { "---" })) -join " | ") |")
+            foreach ($row in $Rows) {
+              $values = foreach ($header in $Headers) {
+                ConvertTo-SafeCell $row.$header
+              }
+              [void] $Builder.AppendLine("| $($values -join " | ") |")
+            }
+            [void] $Builder.AppendLine()
+          }
+
+          $repairReport = $null
+          if (Test-Path -LiteralPath doc-metadata-repair-report.json -PathType Leaf) {
+            $repairReport = Get-Content -LiteralPath doc-metadata-repair-report.json -Raw | ConvertFrom-Json -Depth 32
+          }
+
+          $postReport = $null
+          if (Test-Path -LiteralPath doc-metadata-post-check-report.json -PathType Leaf) {
+            $postReport = Get-Content -LiteralPath doc-metadata-post-check-report.json -Raw | ConvertFrom-Json -Depth 32
+          }
+
+          $updatedRows = @()
+          $initializedRows = @()
+          $skippedRows = @()
+          if ($null -ne $repairReport) {
+            $updatedRows = @($repairReport.updatedFiles | ForEach-Object {
+              [pscustomobject]@{
+                Path = $_.path
+                OldVersion = $_.oldVersion
+                NewVersion = $_.newVersion
+                Reason = $_.reason
+              }
+            })
+            $initializedRows = @($repairReport.updatedFiles | Where-Object { $_.reason -match "initialized|new governed file|missing metadata" } | ForEach-Object {
+              [pscustomobject]@{
+                Path = $_.path
+                NewVersion = $_.newVersion
+                Reason = $_.reason
+              }
+            })
+            $skippedRows = @($repairReport.skippedFiles | ForEach-Object {
+              [pscustomobject]@{
+                Path = $_.path
+                Reason = $_.reason
+              }
+            })
+          }
+
+          $failedRows = @()
+          $unrecoverableRows = @()
+          if ($null -ne $postReport) {
+            $failedRows = @($postReport.failedFiles | ForEach-Object {
+              [pscustomobject]@{
+                Path = $_.path
+                Rule = $_.rule
+                Expected = $_.expected
+              }
+            })
+            $unrecoverableRows = @($postReport.analysis.unrecoverableFiles | ForEach-Object {
+              [pscustomobject]@{
+                Path = $_.path
+                Reason = $_.reason
+                Expected = $_.expected
+              }
+            })
+          }
+
+          $repairCommitSha = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0) {
+            throw "git rev-parse HEAD failed."
+          }
+
+          $repairBranch = if ("${{ github.event_name }}" -eq "pull_request") {
+            "${{ github.event.pull_request.head.ref }}"
+          }
+          else {
+            "${{ steps.branch.outputs.repair_branch }}"
+          }
+          $targetBranch = if ("${{ github.event_name }}" -eq "pull_request") {
+            "${{ github.base_ref }}"
+          }
+          else {
+            "${{ github.ref_name }}"
+          }
+
+          $builder = [System.Text.StringBuilder]::new()
+          [void] $builder.AppendLine("# Document metadata repair report")
+          [void] $builder.AppendLine()
+          [void] $builder.AppendLine("This PR repairs repository-owned document metadata for governed files.")
+          [void] $builder.AppendLine()
+          [void] $builder.AppendLine("## Workflow run")
+          [void] $builder.AppendLine()
+          [void] $builder.AppendLine("- Workflow: ${{ github.workflow }}")
+          [void] $builder.AppendLine("- Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          [void] $builder.AppendLine("- Run ID: ${{ github.run_id }}")
+          [void] $builder.AppendLine("- Run number: ${{ github.run_number }}")
+          [void] $builder.AppendLine("- Event: ${{ github.event_name }}")
+          [void] $builder.AppendLine("- Actor: ${{ github.actor }}")
+          [void] $builder.AppendLine("- Target branch: $targetBranch")
+          [void] $builder.AppendLine("- Source SHA: ${{ github.sha }}")
+          [void] $builder.AppendLine("- Repair branch: $repairBranch")
+          [void] $builder.AppendLine("- Repair commit SHA: $repairCommitSha")
+          [void] $builder.AppendLine("- Post-repair Check result: ${{ steps.post_check.outcome }}")
+          [void] $builder.AppendLine()
+          [void] $builder.AppendLine("> [!IMPORTANT]")
+          [void] $builder.AppendLine("> The repair commit was created by GitHub Actions using `GITHUB_TOKEN`. GitHub may not trigger every follow-up workflow from `GITHUB_TOKEN` commits, so this workflow runs its own post-repair Check and reports the result here.")
+          [void] $builder.AppendLine()
+
+          Add-Table -Builder $builder -Title "Repaired files" -Headers @("Path", "OldVersion", "NewVersion", "Reason") -Rows $updatedRows
+          Add-Table -Builder $builder -Title "Initialized files" -Headers @("Path", "NewVersion", "Reason") -Rows $initializedRows
+          Add-Table -Builder $builder -Title "Skipped files" -Headers @("Path", "Reason") -Rows $skippedRows
+          Add-Table -Builder $builder -Title "Remaining failed files" -Headers @("Path", "Rule", "Expected") -Rows $failedRows
+          Add-Table -Builder $builder -Title "Remaining unrecoverable files" -Headers @("Path", "Reason", "Expected") -Rows $unrecoverableRows
+
+          $bodyPath = "doc-metadata-repair-summary.md"
+          $builder.ToString() | Set-Content -LiteralPath $bodyPath -Encoding utf8NoBOM
+          if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_STEP_SUMMARY)) {
+            Get-Content -LiteralPath $bodyPath -Raw | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          }
+          "body_path=$bodyPath" >> $env:GITHUB_OUTPUT
+
+      - name: Push repair to pull request branch
+        if: github.event_name == 'pull_request' && steps.repair.outputs.changed == 'true'
+        shell: bash
+        working-directory: work
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          remote_url="https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          git fetch --no-tags "$remote_url" "+refs/heads/${{ github.event.pull_request.head.ref }}:refs/remotes/origin/${{ github.event.pull_request.head.ref }}"
+          commit_count="$(git rev-list --count "origin/${{ github.event.pull_request.head.ref }}..HEAD")"
+          if [[ "$commit_count" == "0" ]]; then
+            echo "No repair commits remain relative to the pull request branch; skipping repair push." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git push "$remote_url" "HEAD:${{ github.event.pull_request.head.ref }}"
+
+      - name: Push bot repair branch and create or update pull request
+        id: bot_pr
+        if: github.event_name != 'pull_request' && steps.repair.outputs.changed == 'true'
+        shell: pwsh
+        working-directory: work
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          function Invoke-Native {
+            param(
+              [string] $FileName,
+              [string[]] $Arguments,
+              [switch] $AllowFailure
+            )
+
+            $output = & $FileName @Arguments 2>&1
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -ne 0 -and -not $AllowFailure) {
+              throw "$FileName $($Arguments -join ' ') failed with exit code $exitCode.`n$($output -join "`n")"
+            }
+
+            @($output | ForEach-Object { [string] $_ })
+          }
+
+          $repairBranch = "${{ steps.branch.outputs.repair_branch }}"
+          $targetBranch = "${{ github.ref_name }}"
+          $remoteUrl = "https://x-access-token:${env:GH_TOKEN}@github.com/${{ github.repository }}.git"
+          $bodyPath = "${{ steps.repair_report_summary.outputs.body_path }}"
+          if ([string]::IsNullOrWhiteSpace($bodyPath)) {
+            $bodyPath = "doc-metadata-repair-summary.md"
+          }
+
+          Invoke-Native -FileName "git" -Arguments @("fetch", "--no-tags", $remoteUrl, "+refs/heads/${targetBranch}:refs/remotes/origin/$targetBranch")
+          $commitCount = [int] ((Invoke-Native -FileName "git" -Arguments @("rev-list", "--count", "origin/$targetBranch..HEAD"))[0])
+          if ($commitCount -eq 0) {
+            "No repair commits remain relative to '$targetBranch'; skipping repair branch push and PR creation." >> $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+
+          $remoteBranchState = Invoke-Native -FileName "git" -Arguments @("ls-remote", "--heads", $remoteUrl, $repairBranch)
+          $remoteSha = $null
+          if ($remoteBranchState.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($remoteBranchState[0])) {
+            $remoteSha = ($remoteBranchState[0] -split "\s+")[0]
+          }
+
+          if (-not [string]::IsNullOrWhiteSpace($remoteSha)) {
+            Invoke-Native -FileName "git" -Arguments @("push", "--force-with-lease=refs/heads/${repairBranch}:$remoteSha", $remoteUrl, "HEAD:refs/heads/$repairBranch")
+          }
+          else {
+            Invoke-Native -FileName "git" -Arguments @("push", $remoteUrl, "HEAD:refs/heads/$repairBranch")
+          }
+
+          Invoke-Native -FileName "git" -Arguments @("fetch", "--no-tags", $remoteUrl, "+refs/heads/${repairBranch}:refs/remotes/origin/$repairBranch")
+          $publishedCommitCount = [int] ((Invoke-Native -FileName "git" -Arguments @("rev-list", "--count", "origin/$targetBranch..origin/$repairBranch"))[0])
+          if ($publishedCommitCount -eq 0) {
+            "No repair commits remain after publishing '$repairBranch'; skipping PR creation." >> $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+
+          $existing = (Invoke-Native -FileName "gh" -Arguments @("pr", "list", "--head", $repairBranch, "--base", $targetBranch, "--json", "number", "--jq", ".[0].number")) -join ""
+          if ([string]::IsNullOrWhiteSpace($existing)) {
+            $created = Invoke-Native -FileName "gh" -Arguments @("pr", "create", "--head", $repairBranch, "--base", $targetBranch, "--title", "Repair document metadata", "--body-file", $bodyPath)
+            $prUrl = ($created | Select-Object -Last 1)
+          }
+          else {
+            Invoke-Native -FileName "gh" -Arguments @("pr", "edit", $existing, "--title", "Repair document metadata", "--body-file", $bodyPath) | Out-Null
+            $prUrl = ((Invoke-Native -FileName "gh" -Arguments @("pr", "view", $existing, "--json", "url", "--jq", ".url")) | Select-Object -First 1)
+          }
+
+          if (-not [string]::IsNullOrWhiteSpace($prUrl)) {
+            "Repair PR: $prUrl" >> $env:GITHUB_STEP_SUMMARY
+            "pr_url=$prUrl" >> $env:GITHUB_OUTPUT
+          }
+
       - name: Fail if post-repair Check failed
         if: steps.post_check.outcome != 'success'
         shell: pwsh
@@ -395,12 +605,16 @@ jobs:
           $repairedFiles = "${{ needs.repair-document-metadata.outputs.repaired_files }}"
           $remainingFailedFiles = "${{ needs.repair-document-metadata.outputs.remaining_failed_files }}"
           $remainingUnrecoverableFiles = "${{ needs.repair-document-metadata.outputs.remaining_unrecoverable_files }}"
+          $isRepairBranch = "${{ (github.event_name == 'pull_request' && startsWith(github.head_ref, 'codex/doc-metadata-repair/')) || (github.event_name != 'pull_request' && startsWith(github.ref_name, 'codex/doc-metadata-repair/')) }}"
 
           if ($unrecoverableFailure -eq "true") {
             Write-Error "Document metadata has unrecoverable failures. Review the analyze report."
           }
           elseif ($repairRequired -eq "true" -and $repairSafe -ne "true") {
             Write-Error "Document metadata repair is required but not safe."
+          }
+          elseif ($isRepairBranch -eq "true" -and $repairRequired -eq "true") {
+            Write-Error "Repair publishing skipped because this run is already on a doc-metadata repair branch, but document metadata still requires repair. Review the analyze report for remaining governed files."
           }
           elseif ($repairRequired -eq "true" -and $repairResult -ne "success") {
             Write-Error "Document metadata repair was required but did not complete successfully. Result: $repairResult. Repaired files: $repairedFiles. Remaining invalid files: $remainingFailedFiles. Remaining unrecoverable files: $remainingUnrecoverableFiles."
