@@ -1,3 +1,22 @@
+---
+Version: 1
+Created: 2026-05-28T20:03:47+00:00
+Updated: 2026-05-28T20:03:47+00:00
+Author: BionicCode
+---
+<!-- doc-metadata-presentation:start -->
+<details>
+<summary>Change History</summary>
+
+
+</details>
+
+---
+
+<br>
+<br>
+<!-- doc-metadata-presentation:end -->
+
 # UniquenessPolicy
 
 Declares whether repository-wide basename uniqueness is enforced for an entry.
