@@ -1,13 +1,16 @@
 ---
-Version: 1
+Version: 2
 Created: 2026-05-25T23:40:38+00:00
-Updated: 2026-05-25T23:40:38+00:00
+Updated: 2026-05-28T19:56:50+00:00
 Author: BionicCode
 ---
 <!-- doc-metadata-presentation:start -->
+[<b>View Commit</b>](https://github.com/BionicCode/template-visual-studio-repository/commit/ff13d50ba29de3aab658571ddae2f809570a44f5)
+
 <details>
 <summary>Change History</summary>
 
+- Updated: <b>2026-05-28T19:56:50+00:00</b> | Author: <b>BionicCode</b> | Changes: [<b>View Commit</b>](https://github.com/BionicCode/template-visual-studio-repository/commit/ff13d50ba29de3aab658571ddae2f809570a44f5)
 
 </details>
 
