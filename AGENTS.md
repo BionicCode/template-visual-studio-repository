@@ -1,6 +1,6 @@
 ---
 Version: 2
-Created: 2026-05-25T23:40:38+00:00
+Created: 2027-05-25T23:40:38+00:00
 Updated: 2026-05-28T19:56:50+00:00
 Author: BionicCode
 ---
@@ -20,7 +20,7 @@ Author: BionicCode
 <br>
 <!-- doc-metadata-presentation:end -->
 
-# AGENTS.md (Version 3.1)
+# AGENTS.md
 
 <!--
 Shared baseline instructions for repositories using coding agents.
