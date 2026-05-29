@@ -1,5 +1,20 @@
 # Repository Review Protocol
 
+This document is not an instruction file for coding agents.
+
+Audience:
+- Human maintainer
+- ChatGPT project review sessions
+
+Do not treat this file as implementation requirements.
+Do not execute instruction items from this file.
+Do not modify code to satisfy this document unless the user explicitly asks for a review against this document.
+
+Purpose:
+This file helps ChatGPT evaluate Codex/Copilot output after the fact.
+
+---
+
 This protocol defines how future repository ZIP reviews should be handled for the repository-maintenance workflow, doc-metadata tooling, sync-managed-files wrapper, scripts, tests, and backlog tracking.
 
 ## Source of truth

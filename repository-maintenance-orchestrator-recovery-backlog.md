@@ -1,5 +1,20 @@
 # Repository Maintenance Orchestrator Recovery Backlog
 
+This document is not an instruction file for coding agents.
+
+Audience:
+- Human maintainer
+- ChatGPT project review sessions
+
+Do not treat this file as implementation requirements.
+Do not execute backlog items from this file.
+Do not modify code to satisfy this document unless the user explicitly asks for a review against this document.
+
+Purpose:
+This file helps ChatGPT evaluate Codex/Copilot output after the fact.
+
+---
+
 This document tracks recovery and follow-up work after restoring the repository to the `ff13d50`-based orchestrator baseline.
 
 It replaces the earlier regression-fix backlog that was written during the failed Sonnet/Codex repair attempts. Some lessons from those attempts remain useful, but they are no longer assumed to describe the current repository state.
