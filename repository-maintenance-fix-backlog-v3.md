@@ -52,6 +52,9 @@ This document tracks the remaining fixes after introducing the repository-mainte
 
 `New-MarkdownPresentation` must treat the previous current proven link as history-worthy before clearing/replacing it. It must also maintain the current changes link directly below the frontmatter/presentation block start. That current link is not a history item, but it still uses the same URL-kind/label consistency rules: compare URL means `View Changes`, commit URL means `View Commit` fallback. The generator must use the new compact format without `Changes:`. The validator should accept only the current canonical generated format, not a legacy grammar.
 
+Implementation constraint:
+Do not add permanent compatibility or migration logic for stale generated `View Commit` labels or legacy `Changes:` labels. The tool is unpublished. Existing repository documents will be manually cleaned or fixed by a one-time repository commit. The generator and validator should define one strict canonical format.
+
 **Out of scope for this pass**
 
 - [ ] Manifest redesign.
