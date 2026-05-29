@@ -40,8 +40,7 @@ $script:PresentationStartMarker = "<!-- doc-metadata-presentation:start -->"
 $script:PresentationEndMarker = "<!-- doc-metadata-presentation:end -->"
 $script:PlainTextSeparator = "-" * 80
 $script:ManagedHistoryLinkPattern = '\[<b>(?<label>View Changes|View Commit)</b>\]\((?<url>[^)]+)\)'
-$script:CurrentChangesLinkPattern = "^\s*>\s\[<b>(?<label>View Changes|View Commit)</b>\]\((?<url>[^)]+)\)\s*$"
-$script:HistoryEntryPattern = "^\s*-\s+Updated:\s*<b>[^<]+</b>\s*\|\s*Author:\s*<b>[^<]+</b>\s*\|\s*\[<b>(?<label>View Changes|View Commit)</b>\]\((?<url>[^)]+)\)\s*$"
+$script:CurrentChangesLinkPattern = "^\s*$script:ManagedHistoryLinkPattern\s*$"
 $script:TimestampPattern = "^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?[+-]\d{2}:\d{2}$"
 $script:RemediationCommand = "pwsh ./.github/scripts/doc-metadata/update-doc-metadata.ps1 -Mode Update -Root ."
 $script:DefaultAllowedDocumentExtensions = @(".md", ".markdown", ".txt")
@@ -2059,16 +2058,6 @@ function Test-ManagedHistoryUrl {
         return $segments.Count -eq 4 -and $segments[3] -match "^[0-9a-fA-F]{40}$"
     }
 
-    if ($kind -eq "compare") {
-        if ($segments.Count -ne 4) {
-            return $false
-        }
-        $rangeParts = @($segments[3] -split "\.\.")
-        return $rangeParts.Count -eq 2 -and
-               ($rangeParts[0] -match "^[0-9a-fA-F]{40}$") -and
-               ($rangeParts[1] -match "^[0-9a-fA-F]{40}$")
-    }
-
     $false
 }
 
@@ -2088,12 +2077,6 @@ function Get-ManagedHistoryUrlParts {
     $commitSha = $null
     if ($segments[2] -eq "commit" -and $segments.Count -eq 4) {
         $commitSha = $segments[3]
-    }
-    elseif ($segments[2] -eq "compare" -and $segments.Count -eq 4) {
-        $rangeParts = @($segments[3] -split "\.\.")
-        if ($rangeParts.Count -eq 2 -and $rangeParts[1] -match "^[0-9a-fA-F]{40}$") {
-            $commitSha = $rangeParts[1]
-        }
     }
 
     [pscustomobject]@{
@@ -2137,7 +2120,7 @@ function Test-ManagedPresentationLink {
     $label = [string] (Get-PropertyValue -Object $Link -Name "Label")
     $url = [string] (Get-PropertyValue -Object $Link -Name "Url")
 
-    if (-not ($label.Equals("View Commit", [System.StringComparison]::Ordinal) -or $label.Equals("View Changes", [System.StringComparison]::Ordinal))) {
+    if (-not $label.Equals("View Commit", [System.StringComparison]::Ordinal)) {
         return $false
     }
 
@@ -2146,15 +2129,7 @@ function Test-ManagedPresentationLink {
     }
 
     $urlParts = Get-ManagedHistoryUrlParts -Url $url
-    if ($null -eq $urlParts -or [string]::IsNullOrWhiteSpace($urlParts.CommitSha)) {
-        return $false
-    }
-
-    # Enforce label/URL-kind consistency: View Commit requires commit URL; View Changes requires compare URL.
-    if ($label.Equals("View Commit", [System.StringComparison]::Ordinal) -and $urlParts.Kind -ne "commit") {
-        return $false
-    }
-    if ($label.Equals("View Changes", [System.StringComparison]::Ordinal) -and $urlParts.Kind -ne "compare") {
+    if ($null -eq $urlParts -or $urlParts.Kind -ne "commit" -or [string]::IsNullOrWhiteSpace($urlParts.CommitSha)) {
         return $false
     }
 
@@ -2222,7 +2197,7 @@ function Get-HistoryEntryLines {
         return @()
     }
 
-    @($MetadataInfo.PresentationLines | Where-Object { $_ -match $script:HistoryEntryPattern })
+    @($MetadataInfo.PresentationLines | Where-Object { $_ -match "^\s*-\s+Updated:" })
 }
 
 function Get-CurrentChangesLine {
@@ -2232,20 +2207,20 @@ function Get-CurrentChangesLine {
         return $null
     }
 
-    return Get-PresentationLine -MetadataInfo $MetadataInfo -LinePattern $script:CurrentChangesLinkPattern
-}
-
-function Get-PresentationLine {
-    param([object] $MetadataInfo, [string] $LinePattern)
-
-    if ($null -eq $MetadataInfo -or -not $MetadataInfo.HasPresentation -or $MetadataInfo.IsPresentationMalformed) {
-        return $null
-    }
-
     foreach ($line in @($MetadataInfo.PresentationLines)) {
-        if ($line -match $LinePattern) {
+        if ($line.Trim() -eq $script:PresentationStartMarker) {
+            continue
+        }
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+        if ($line.Trim() -eq "<details>") {
+            return $null
+        }
+        if ($line -match $script:CurrentChangesLinkPattern) {
             return $line
         }
+        return $null
     }
 
     $null
@@ -2380,8 +2355,8 @@ function New-MarkdownPresentation {
                 $currentChangesLine = Get-CurrentChangesLine -MetadataInfo $sourceMetadataInfo
             }
             "replace" {
-                if (-not [string]::IsNullOrWhiteSpace($historyUrl)) {
-                    $currentChangesLine = "> [<b>$historyLinkText</b>]($historyUrl)"
+                if (-not [string]::IsNullOrWhiteSpace($historyUrl) -and $historyLinkText -eq "View Commit") {
+                    $currentChangesLine = "[<b>$historyLinkText</b>]($historyUrl)"
                 }
             }
             "clear" {
@@ -2391,15 +2366,11 @@ function New-MarkdownPresentation {
                 $currentChangesLine = Get-CurrentChangesLine -MetadataInfo $sourceMetadataInfo
             }
         }
-        $prevCurrentChangesHistoryEntry = if ($Values.ContainsKey("__prevCurrentChangesHistoryEntry")) { [string] $Values["__prevCurrentChangesHistoryEntry"] } else { "" }
-        if ($addHistoryEntry -and -not [string]::IsNullOrWhiteSpace($historyUrl)) {
-            $newEntry = "- Updated: <b>$updated</b> | Author: <b>$author</b> | [<b>$historyLinkText</b>]($historyUrl)"
+        if ($addHistoryEntry -and -not [string]::IsNullOrWhiteSpace($historyUrl) -and $historyLinkText -eq "View Commit") {
+            $newEntry = "- Updated: <b>$updated</b> | Author: <b>$author</b> | Changes: [<b>$historyLinkText</b>]($historyUrl)"
 
             [void] $seen.Add($newEntry)
             $historyLines.Add($newEntry)
-        }
-        if (-not [string]::IsNullOrWhiteSpace($prevCurrentChangesHistoryEntry) -and $seen.Add($prevCurrentChangesHistoryEntry)) {
-            $historyLines.Add($prevCurrentChangesHistoryEntry)
         }
         foreach ($line in (Get-HistoryEntryLines -MetadataInfo $sourceMetadataInfo)) {
             if ($seen.Add($line)) {
@@ -2570,21 +2541,12 @@ function Validate-FileMetadata {
                 Expected = "blank physical line after doc-metadata-presentation end marker"
             })
         }
-        foreach ($historyLine in @($presentationLines | Where-Object { $_ -match "^\s*-\s+Updated:" })) {
-            if ($historyLine -notmatch $script:HistoryEntryPattern) {
-                $errors.Add([pscustomobject]@{
-                    Rule = "managed metadata presentation"
-                    Current = "invalid history entry format"
-                    Expected = "history entries must match '- Updated: <b>...</b> | Author: <b>...</b> | [<b>View Changes|View Commit</b>](...)'"
-                })
-            }
-        }
         foreach ($link in @(Get-ManagedPresentationLinks -MetadataInfo $MetadataInfo)) {
             if (-not (Test-ManagedPresentationLink -Link $link -RepoPath $RepoPath -Config $Config)) {
                 $errors.Add([pscustomobject]@{
                     Rule = "managed history URL"
                     Current = "invalid link: $($link.Label) $($link.Url)"
-                    Expected = "proven View Changes or View Commit link to a commit that changed this file's managed body"
+                    Expected = "proven View Commit link to a commit that changed this file's managed body"
                 })
             }
         }
@@ -2813,12 +2775,12 @@ function Get-HistoryLinkInfo {
         }
 
         $urlParts = Get-ManagedHistoryUrlParts -Url $url
-        if ($null -eq $urlParts -or ($urlParts.Kind -ne "commit" -and $urlParts.Kind -ne "compare")) {
+        if ($null -eq $urlParts -or $urlParts.Kind -ne "commit") {
             return @{
                 Url = ""
                 LinkText = "View Commit"
                 HasReliableContext = $false
-                Reason = "link map URL is not a valid commit or compare URL"
+                Reason = "link map URL is not a proven commit fallback URL"
             }
         }
 
@@ -2850,10 +2812,9 @@ function Get-HistoryLinkInfo {
             }
         }
 
-        $validatedLinkText = if ($urlParts.Kind -eq "compare") { "View Changes" } else { "View Commit" }
         return @{
             Url = $url
-            LinkText = $validatedLinkText
+            LinkText = "View Commit"
             HasReliableContext = $true
             Reason = "validated link map entry"
         }
@@ -3004,8 +2965,7 @@ function Initialize-OrUpdateFile {
 
     $currentInfo = Get-MetadataInfo -Content $textFile.Content -Config $config
     $currentSnapshot = Get-MetadataSnapshot -MetadataInfo $currentInfo -Config $config
-    $hasExplicitComparisonInput = -not [string]::IsNullOrWhiteSpace($BaseSha) -or -not [string]::IsNullOrWhiteSpace($EventName)
-    $previousRevision = if ($null -ne $Comparison -and $Comparison.staleCheckAvailable -and $hasExplicitComparisonInput) { $Comparison.baseSha } else { "HEAD" }
+    $previousRevision = if ($null -ne $Comparison -and $Comparison.staleCheckAvailable) { $Comparison.baseSha } else { "HEAD" }
     $previousContent = Get-GitFileContent -Revision $previousRevision -RepoPath $Record.PreviousPath
     $previousInfo = if ($null -ne $previousContent) { Get-MetadataInfo -Content $previousContent -Config $config } else { $null }
     $previousSnapshot = if ($null -ne $previousInfo) { Get-MetadataSnapshot -MetadataInfo $previousInfo -Config $config } else { $null }
@@ -3214,28 +3174,6 @@ function Initialize-OrUpdateFile {
         else {
             "preserve"
         }
-        $useTrustedPreviousPresentation = -not $bodyChanged -and ($hasPresentationDriftFromPrevious -or $canRestoreMissingPresentation)
-        $sourcePresentationInfo = if ($useTrustedPreviousPresentation) { $previousInfo } else { $currentInfo }
-        $prevCurrentChangesHistoryEntry = $null
-        if ($currentChangesLineMode -eq "clear") {
-            $prevCurrentLineSource = if ($bodyChanged) { $currentInfo } else { $sourcePresentationInfo }
-            $prevCurrentLine = Get-CurrentChangesLine -MetadataInfo $prevCurrentLineSource
-            if (-not [string]::IsNullOrWhiteSpace($prevCurrentLine)) {
-                $prevMatch = [regex]::Match($prevCurrentLine, $script:ManagedHistoryLinkPattern)
-                if ($prevMatch.Success) {
-                    $prevUrl = $prevMatch.Groups["url"].Value
-                    $prevLabel = $prevMatch.Groups["label"].Value
-                    $prevLink = [pscustomobject]@{ Label = $prevLabel; Url = $prevUrl; Line = $prevCurrentLine }
-                    if (Test-ManagedPresentationLink -Link $prevLink -RepoPath $repoPath -Config $config) {
-                        $srcUpdated = if ($prevCurrentLineSource.Fields.ContainsKey($config.updatedField)) { [string] $prevCurrentLineSource.Fields[$config.updatedField] } else { $null }
-                        $srcAuthor = if ($prevCurrentLineSource.Fields.ContainsKey($config.authorField)) { [string] $prevCurrentLineSource.Fields[$config.authorField] } else { $null }
-                        if (-not [string]::IsNullOrWhiteSpace($srcUpdated) -and -not [string]::IsNullOrWhiteSpace($srcAuthor)) {
-                            $prevCurrentChangesHistoryEntry = "- Updated: <b>$srcUpdated</b> | Author: <b>$srcAuthor</b> | [<b>$prevLabel</b>]($prevUrl)"
-                        }
-                    }
-                }
-            }
-        }
         $values = @{
             $config.versionField = $newVersion
             $config.createdField = $newCreated
@@ -3243,10 +3181,9 @@ function Initialize-OrUpdateFile {
             $config.authorField = $newAuthor
             "__historyUrl" = $linkInfo.Url
             "__historyLinkText" = $linkInfo.LinkText
-            "__sourcePresentationInfo" = $sourcePresentationInfo
+            "__sourcePresentationInfo" = if ($hasPresentationDriftFromPrevious -or $canRestoreMissingPresentation) { $previousInfo } else { $currentInfo }
             "__addHistoryEntry" = ($bodyChanged -and $linkInfo.HasReliableContext)
             "__currentChangesLineMode" = $currentChangesLineMode
-            "__prevCurrentChangesHistoryEntry" = $prevCurrentChangesHistoryEntry
         }
         $newContent = Set-MetadataContent -Content $textFile.Content -Config $config -Values $values -NewLine $textFile.NewLine
         if ($PSCmdlet.ShouldProcess($repoPath, "Update document metadata")) {
@@ -3936,7 +3873,7 @@ function Invoke-Main {
         }
         else {
             $repairComparison = $null
-            if ($Mode -eq "Update") {
+            if ($Mode -eq "Update" -and ((-not [string]::IsNullOrWhiteSpace($EventName)) -or ((-not [string]::IsNullOrWhiteSpace($BaseSha)) -and (-not [string]::IsNullOrWhiteSpace($HeadSha))))) {
                 $repairComparison = Get-ComparisonInfo -RequestedEventName $EventName -RequestedEventPayloadPath $EventPayloadPath -RequestedHeadSha $HeadSha -RequestedBaseSha $BaseSha
                 $report.comparison = $repairComparison
             }

@@ -136,10 +136,6 @@ function Get-ComparisonRange {
         return [pscustomobject]@{ Base = $RequestedBaseSha; Head = $RequestedHeadSha; HasRange = $true; Reason = "explicit base..head" }
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($RequestedHeadSha)) {
-        return [pscustomobject]@{ Base = $null; Head = $RequestedHeadSha; HasRange = $true; Reason = "explicit head only; all commits reachable from head" }
-    }
-
     [pscustomobject]@{ Base = $null; Head = $null; HasRange = $false; Reason = "no safe comparison context" }
 }
 
@@ -237,16 +233,10 @@ if ($range.HasRange -and -not [string]::IsNullOrWhiteSpace($Repository)) {
 
             $baseForCommit = if ($parents.Count -eq 1) { [string] $parents[0] } else { $null }
             if (Test-ManagedBodyChanged -RootPath $rootFullPath -MetadataScript $metadataScriptFullPath -RepoPath $repoPath -Base $baseForCommit -Head $commit) {
-                $url = if ($null -ne $baseForCommit) {
-                    "$server/$Repository/compare/$baseForCommit..$commit"
-                } else {
-                    "$server/$Repository/commit/$commit"
-                }
-                $linkText = if ($null -ne $baseForCommit) { "View Changes" } else { "View Commit" }
                 $links[$repoPath] = [ordered]@{
                     path = $repoPath
-                    url = $url
-                    linkText = $linkText
+                    url = "$server/$Repository/commit/$commit"
+                    linkText = "View Commit"
                     context = "$EventName`:$commit"
                     commitSha = $commit
                     bodyChanged = $true

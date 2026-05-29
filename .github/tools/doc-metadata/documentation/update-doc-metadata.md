@@ -17,7 +17,7 @@ Author: BionicCode
 <br>
 <!-- doc-metadata-presentation:end -->
 
-# Document Metadata Automation Tool
+# Document Metadata Automation
 
 ## What this tool does
 
@@ -41,12 +41,12 @@ Author: BionicCode
 ---
 
 <!-- doc-metadata-presentation:start -->
-> [<b>View Changes</b>](https://github.com/owner/repo/commit/0123456789abcdef0123456789abcdef01234567)
+[<b>View Commit</b>](https://github.com/owner/repo/commit/0123456789abcdef0123456789abcdef01234567)
 
 <details>
 <summary>Change History</summary>
 
-- Updated: <b>2026-05-26T01:40:38+00:00</b> | Author: <b>BionicCode</b> | [<b>View Changes</b>](https://github.com/owner/repo/commit/0123456789abcdef0123456789abcdef01234567)
+- Updated: <b>2026-05-26T01:40:38+00:00</b> | Author: <b>BionicCode</b> | Changes: [<b>View Commit</b>](https://github.com/owner/repo/commit/0123456789abcdef0123456789abcdef01234567)
 
 </details>
 

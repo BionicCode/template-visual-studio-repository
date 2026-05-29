@@ -19,7 +19,7 @@ Author: BionicCode
 
 # Document Metadata Manifest
 
-> [!NOTE]
+> [!INFO]
 > See [API referece](../documentation/doc-metadata-manifest-api.md) for manifest types  documentation.
 
 ## Purpose

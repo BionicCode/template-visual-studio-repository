@@ -1,17 +1,13 @@
 ---
-Version: 3
-Created: 2027-05-25T23:40:38+00:00
-Updated: 2026-05-28T20:03:47+00:00
+Version: 1
+Created: 2026-05-25T23:40:38+00:00
+Updated: 2026-05-25T23:40:38+00:00
 Author: BionicCode
 ---
 <!-- doc-metadata-presentation:start -->
-> [<b>View Changes</b>](https://github.com/BionicCode/template-visual-studio-repository/commit/5f439907eca5d6fb10db0014eb771de2238f3a31)
-
 <details>
 <summary>Change History</summary>
 
-- Updated: <b>2026-05-28T20:03:47+00:00</b> | Author: <b>BionicCode</b> | Changes: [<b>View Changes</b>](https://github.com/BionicCode/template-visual-studio-repository/commit/5f439907eca5d6fb10db0014eb771de2238f3a31)
-- Updated: <b>2026-05-28T19:56:50+00:00</b> | Author: <b>BionicCode</b> | Changes: [<b>View Changes</b>](https://github.com/BionicCode/template-visual-studio-repository/commit/ff13d50ba29de3aab658571ddae2f809570a44f5)
 
 </details>
 
@@ -21,7 +17,7 @@ Author: BionicCode
 <br>
 <!-- doc-metadata-presentation:end -->
 
-# AGENTS.md
+# AGENTS.md (Version 3.1)
 
 <!--
 Shared baseline instructions for repositories using coding agents.
