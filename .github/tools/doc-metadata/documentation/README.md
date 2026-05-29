@@ -17,7 +17,7 @@ Author: BionicCode
 <br>
 <!-- doc-metadata-presentation:end -->
 
-# Document Metadata Automation
+# Document Metadata Automation Tool
 
 ## What this tool does
 

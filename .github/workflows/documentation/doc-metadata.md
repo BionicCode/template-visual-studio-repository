@@ -14,7 +14,7 @@
 | `workflow_call` | Passive/reusable | Normal repository maintenance routing calls this workflow through the orchestrator. |
 | `workflow_dispatch` | Passive/reusable with direct manual entry | Available for targeted manual execution when maintainers intentionally want to run the metadata workflow directly. |
 
-> [!NOTE]
+> [!NOTE]  
 > Normal pull request, push, and schedule routing is owned by [Repository maintenance](repository-maintenance.md), not by this workflow directly.
 
 ## Workflow role
