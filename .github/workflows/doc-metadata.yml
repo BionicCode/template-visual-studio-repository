@@ -95,7 +95,7 @@ jobs:
         with:
           ref: ${{ env.EFFECTIVE_PR_BASE_SHA }}
           path: trusted
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
       - name: Checkout trusted scripts for trusted branch
@@ -104,7 +104,7 @@ jobs:
         with:
           ref: ${{ env.EFFECTIVE_DEFAULT_BRANCH }}
           path: trusted
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
       - name: Checkout working files for pull request
@@ -174,13 +174,13 @@ jobs:
         shell: pwsh
         working-directory: work
         env:
-          DOC_METADATA_EVENT_NAME: ${{ env.EFFECTIVE_EVENT_NAME }}
+          DOC_METADATA_SCRIPT_EVENT_NAME: ${{ (env.EFFECTIVE_EVENT_NAME == 'pull_request' || env.EFFECTIVE_EVENT_NAME == 'push') && env.EFFECTIVE_EVENT_NAME || '' }}
           DOC_METADATA_HEAD_SHA: ${{ env.EFFECTIVE_SHA }}
         run: |
           ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 `
             -Mode Analyze `
             -Root . `
-            -EventName "$env:DOC_METADATA_EVENT_NAME" `
+            -EventName "$env:DOC_METADATA_SCRIPT_EVENT_NAME" `
             -EventPayloadPath "${{ steps.event_payload.outputs.path }}" `
             -HeadSha "$env:DOC_METADATA_HEAD_SHA" `
             -ReportOutputPath doc-metadata-analyze-report.json
@@ -241,7 +241,7 @@ jobs:
         with:
           ref: ${{ env.EFFECTIVE_PR_BASE_SHA }}
           path: trusted
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
       - name: Checkout trusted scripts for trusted branch
@@ -250,7 +250,7 @@ jobs:
         with:
           ref: ${{ env.EFFECTIVE_DEFAULT_BRANCH }}
           path: trusted
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
       - name: Checkout same-repository pull request branch
@@ -343,14 +343,14 @@ jobs:
         shell: pwsh
         working-directory: work
         env:
-          DOC_METADATA_EVENT_NAME: ${{ env.EFFECTIVE_EVENT_NAME }}
+          DOC_METADATA_SCRIPT_EVENT_NAME: ${{ (env.EFFECTIVE_EVENT_NAME == 'pull_request' || env.EFFECTIVE_EVENT_NAME == 'push') && env.EFFECTIVE_EVENT_NAME || '' }}
           DOC_METADATA_HEAD_SHA: ${{ env.EFFECTIVE_SHA }}
           DOC_METADATA_REPAIR_PATHS_PATH: ${{ runner.temp }}/doc-metadata-repair-paths.txt
         run: |
           ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 `
             -Mode Analyze `
             -Root . `
-            -EventName "$env:DOC_METADATA_EVENT_NAME" `
+            -EventName "$env:DOC_METADATA_SCRIPT_EVENT_NAME" `
             -EventPayloadPath "${{ steps.event_payload.outputs.path }}" `
             -HeadSha "$env:DOC_METADATA_HEAD_SHA" `
             -ReportOutputPath doc-metadata-repair-analyze-report.json
@@ -363,7 +363,8 @@ jobs:
         shell: pwsh
         working-directory: work
         env:
-          DOC_METADATA_EVENT_NAME: ${{ env.EFFECTIVE_EVENT_NAME }}
+          DOC_METADATA_SCRIPT_EVENT_NAME: ${{ (env.EFFECTIVE_EVENT_NAME == 'pull_request' || env.EFFECTIVE_EVENT_NAME == 'push') && env.EFFECTIVE_EVENT_NAME || '' }}
+          DOC_METADATA_HEAD_SHA: ${{ env.EFFECTIVE_SHA }}
           GITHUB_REPOSITORY_NAME: ${{ github.repository }}
           GITHUB_SERVER_URL_VALUE: ${{ github.server_url }}
           DOC_METADATA_REPAIR_PATHS_PATH: ${{ runner.temp }}/doc-metadata-repair-paths.txt
@@ -372,8 +373,9 @@ jobs:
             -Root . `
             -MetadataScriptPath ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 `
             -PathListPath "$env:DOC_METADATA_REPAIR_PATHS_PATH" `
-            -EventName "$env:DOC_METADATA_EVENT_NAME" `
+            -EventName "$env:DOC_METADATA_SCRIPT_EVENT_NAME" `
             -EventPayloadPath "${{ steps.event_payload.outputs.path }}" `
+            -HeadSha "$env:DOC_METADATA_HEAD_SHA" `
             -Repository "$env:GITHUB_REPOSITORY_NAME" `
             -ServerUrl "$env:GITHUB_SERVER_URL_VALUE" `
             -OutputPath doc-metadata-links.json
@@ -383,7 +385,7 @@ jobs:
         shell: pwsh
         working-directory: work
         env:
-          DOC_METADATA_EVENT_NAME: ${{ env.EFFECTIVE_EVENT_NAME }}
+          DOC_METADATA_SCRIPT_EVENT_NAME: ${{ (env.EFFECTIVE_EVENT_NAME == 'pull_request' || env.EFFECTIVE_EVENT_NAME == 'push') && env.EFFECTIVE_EVENT_NAME || '' }}
           DOC_METADATA_HEAD_SHA: ${{ env.EFFECTIVE_SHA }}
           DOC_METADATA_REPAIR_PATHS_PATH: ${{ runner.temp }}/doc-metadata-repair-paths.txt
         run: |
@@ -397,7 +399,7 @@ jobs:
             -Mode Update `
             -Root . `
             -Path $paths `
-            -EventName "$env:DOC_METADATA_EVENT_NAME" `
+            -EventName "$env:DOC_METADATA_SCRIPT_EVENT_NAME" `
             -EventPayloadPath "${{ steps.event_payload.outputs.path }}" `
             -HeadSha "$env:DOC_METADATA_HEAD_SHA" `
             -HistoryLinkMapPath doc-metadata-links.json `

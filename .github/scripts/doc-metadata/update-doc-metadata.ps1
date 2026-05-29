@@ -2058,6 +2058,16 @@ function Test-ManagedHistoryUrl {
         return $segments.Count -eq 4 -and $segments[3] -match "^[0-9a-fA-F]{40}$"
     }
 
+    if ($kind -eq "compare") {
+        if ($segments.Count -ne 4) {
+            return $false
+        }
+        $rangeParts = @($segments[3] -split "\.\.")
+        return $rangeParts.Count -eq 2 -and
+               ($rangeParts[0] -match "^[0-9a-fA-F]{40}$") -and
+               ($rangeParts[1] -match "^[0-9a-fA-F]{40}$")
+    }
+
     $false
 }
 
@@ -2077,6 +2087,12 @@ function Get-ManagedHistoryUrlParts {
     $commitSha = $null
     if ($segments[2] -eq "commit" -and $segments.Count -eq 4) {
         $commitSha = $segments[3]
+    }
+    elseif ($segments[2] -eq "compare" -and $segments.Count -eq 4) {
+        $rangeParts = @($segments[3] -split "\.\.")
+        if ($rangeParts.Count -eq 2 -and $rangeParts[1] -match "^[0-9a-fA-F]{40}$") {
+            $commitSha = $rangeParts[1]
+        }
     }
 
     [pscustomobject]@{
@@ -2120,7 +2136,7 @@ function Test-ManagedPresentationLink {
     $label = [string] (Get-PropertyValue -Object $Link -Name "Label")
     $url = [string] (Get-PropertyValue -Object $Link -Name "Url")
 
-    if (-not $label.Equals("View Commit", [System.StringComparison]::Ordinal)) {
+    if (-not ($label.Equals("View Commit", [System.StringComparison]::Ordinal) -or $label.Equals("View Changes", [System.StringComparison]::Ordinal))) {
         return $false
     }
 
@@ -2129,7 +2145,15 @@ function Test-ManagedPresentationLink {
     }
 
     $urlParts = Get-ManagedHistoryUrlParts -Url $url
-    if ($null -eq $urlParts -or $urlParts.Kind -ne "commit" -or [string]::IsNullOrWhiteSpace($urlParts.CommitSha)) {
+    if ($null -eq $urlParts -or [string]::IsNullOrWhiteSpace($urlParts.CommitSha)) {
+        return $false
+    }
+
+    # Enforce label/URL-kind consistency: View Commit requires commit URL; View Changes requires compare URL.
+    if ($label.Equals("View Commit", [System.StringComparison]::Ordinal) -and $urlParts.Kind -ne "commit") {
+        return $false
+    }
+    if ($label.Equals("View Changes", [System.StringComparison]::Ordinal) -and $urlParts.Kind -ne "compare") {
         return $false
     }
 
@@ -2355,7 +2379,7 @@ function New-MarkdownPresentation {
                 $currentChangesLine = Get-CurrentChangesLine -MetadataInfo $sourceMetadataInfo
             }
             "replace" {
-                if (-not [string]::IsNullOrWhiteSpace($historyUrl) -and $historyLinkText -eq "View Commit") {
+                if (-not [string]::IsNullOrWhiteSpace($historyUrl)) {
                     $currentChangesLine = "[<b>$historyLinkText</b>]($historyUrl)"
                 }
             }
@@ -2366,7 +2390,7 @@ function New-MarkdownPresentation {
                 $currentChangesLine = Get-CurrentChangesLine -MetadataInfo $sourceMetadataInfo
             }
         }
-        if ($addHistoryEntry -and -not [string]::IsNullOrWhiteSpace($historyUrl) -and $historyLinkText -eq "View Commit") {
+        if ($addHistoryEntry -and -not [string]::IsNullOrWhiteSpace($historyUrl)) {
             $newEntry = "- Updated: <b>$updated</b> | Author: <b>$author</b> | Changes: [<b>$historyLinkText</b>]($historyUrl)"
 
             [void] $seen.Add($newEntry)
@@ -2546,7 +2570,7 @@ function Validate-FileMetadata {
                 $errors.Add([pscustomobject]@{
                     Rule = "managed history URL"
                     Current = "invalid link: $($link.Label) $($link.Url)"
-                    Expected = "proven View Commit link to a commit that changed this file's managed body"
+                    Expected = "proven View Changes or View Commit link to a commit that changed this file's managed body"
                 })
             }
         }
@@ -2775,12 +2799,12 @@ function Get-HistoryLinkInfo {
         }
 
         $urlParts = Get-ManagedHistoryUrlParts -Url $url
-        if ($null -eq $urlParts -or $urlParts.Kind -ne "commit") {
+        if ($null -eq $urlParts -or ($urlParts.Kind -ne "commit" -and $urlParts.Kind -ne "compare")) {
             return @{
                 Url = ""
                 LinkText = "View Commit"
                 HasReliableContext = $false
-                Reason = "link map URL is not a proven commit fallback URL"
+                Reason = "link map URL is not a valid commit or compare URL"
             }
         }
 
@@ -2812,9 +2836,13 @@ function Get-HistoryLinkInfo {
             }
         }
 
+        $validatedLinkText = [string] (Get-PropertyValue -Object $mapEntry -Name "linkText")
+        if ([string]::IsNullOrWhiteSpace($validatedLinkText) -or (-not ($validatedLinkText -eq "View Commit" -or $validatedLinkText -eq "View Changes"))) {
+            $validatedLinkText = "View Commit"
+        }
         return @{
             Url = $url
-            LinkText = "View Commit"
+            LinkText = $validatedLinkText
             HasReliableContext = $true
             Reason = "validated link map entry"
         }

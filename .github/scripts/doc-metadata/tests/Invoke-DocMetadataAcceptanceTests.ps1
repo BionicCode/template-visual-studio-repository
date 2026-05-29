@@ -458,14 +458,14 @@ Invoke-Test "Managed presentation URL validation rejects unrelated and generic r
     Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -CurrentChangesUrl "https://github.com/example/repo/compare/1111111111111111111111111111111111111111...2222222222222222222222222222222222222222" -CurrentChangesLinkText "View Changes")
     $compareResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md") -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
 
-    Assert-True ($compareResult.ExitCode -ne 0) "Current View Changes compare URLs should fail until verified file-specific changes support exists."
+    Assert-True ($compareResult.ExitCode -ne 0) "Compare URLs with three-dot notation are not valid managed history URLs."
     Assert-True ($compareResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
 
     $historyCompare = Get-MarkdownWithMetadata -Version "1" -HistoryLines @("- Updated: <b>2026-01-01T00:00:00+00:00</b> | Author: <b>Doc Metadata Tests</b> | Changes: [<b>View Changes</b>](https://github.com/example/repo/compare/1111111111111111111111111111111111111111...2222222222222222222222222222222222222222)")
     Write-Utf8File -Path $readme -Content $historyCompare
     $historyCompareResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md") -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
 
-    Assert-True ($historyCompareResult.ExitCode -ne 0) "History View Changes compare URLs should fail until verified file-specific changes support exists."
+    Assert-True ($historyCompareResult.ExitCode -ne 0) "History entries with three-dot compare URLs should fail validation because three-dot notation is not a valid managed compare URL format."
     Assert-True ($historyCompareResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
 
     Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1" -CurrentChangesUrl "https://github.com/other/repo/commit/4444444444444444444444444444444444444444")
@@ -482,7 +482,7 @@ Invoke-Test "Managed presentation URL validation rejects unrelated and generic r
     Assert-True ($genericResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
 }
 
-Invoke-Test "Managed presentation links require View Commit and body-change proof" {
+Invoke-Test "Managed presentation links require label-kind consistency and body-change proof" {
     $root = New-TestRepository
     $readme = Join-Path $root "README.md"
     Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "1")
@@ -501,10 +501,10 @@ Invoke-Test "Managed presentation links require View Commit and body-change proo
     Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "2" -Updated "2026-01-02T00:00:00+00:00" -Body "# Title`nBody changed for link proof.`n" -CurrentChangesUrl "https://github.com/example/repo/commit/$bodyCommit" -CurrentChangesLinkText "View Changes")
     $viewChangesResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md", "-BaseSha", $base, "-HeadSha", $bodyCommit) -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
 
-    Assert-True ($viewChangesResult.ExitCode -ne 0) "Commit URLs labeled View Changes should fail until verified file-specific changes support exists."
+    Assert-True ($viewChangesResult.ExitCode -ne 0) "Commit URLs labeled View Changes should fail because the label does not match the URL kind."
     Assert-True ($viewChangesResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
 
-    Write-Utf8File -Path (Join-Path $root "docs\other.md") -Content "# Other`n"
+    Write-Utf8File -Path (Join-Path $root "src\other.cs") -Content "// unrelated source file`n"
     Commit-All -Root $root -Message "other document"
     $otherCommit = (Invoke-Git -Root $root -Arguments @("rev-parse", "HEAD")).Trim()
 
@@ -518,8 +518,13 @@ Invoke-Test "Managed presentation links require View Commit and body-change proo
     Write-Utf8File -Path $readme -Content $historyViewChanges
     $historyResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md", "-BaseSha", $base, "-HeadSha", $bodyCommit) -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
 
-    Assert-True ($historyResult.ExitCode -ne 0) "History entries labeled View Changes should fail until verified file-specific changes support exists."
+    Assert-True ($historyResult.ExitCode -ne 0) "History entries using a commit URL with View Changes label should fail because label and URL kind must be consistent."
     Assert-True ($historyResult.Stdout -match "managed history URL") "Failure should identify managed history URL validation."
+
+    Write-Utf8File -Path $readme -Content (Get-MarkdownWithMetadata -Version "2" -Updated "2026-01-02T00:00:00+00:00" -Body "# Title`nBody changed for link proof.`n" -CurrentChangesUrl "https://github.com/example/repo/compare/$base..$bodyCommit" -CurrentChangesLinkText "View Changes")
+    $validViewChangesResult = Invoke-Tool -Root $root -Mode "Check" -ExtraArguments @("-Path", "README.md", "-BaseSha", $base, "-HeadSha", $bodyCommit) -Environment @{ GITHUB_REPOSITORY = "example/repo"; GITHUB_SERVER_URL = "https://github.com" }
+
+    Assert-Equal 0 $validViewChangesResult.ExitCode "Proven View Changes compare URL should pass managed presentation URL validation."
 }
 
 Invoke-Test "ContentChanges mode uses managed-body semantics for multi-commit ranges" {
@@ -584,7 +589,7 @@ Invoke-Test "Resolver maps each file to newest body-changing commit, not unrelat
     $entry = $links.'README.md'
     Assert-Equal $commitA $entry.commitSha "Resolver should choose commit A for README, not unrelated commit B."
     Assert-True ([bool] $entry.bodyChanged) "Resolver should emit bodyChanged proof."
-    Assert-Equal "View Commit" $entry.linkText "Resolver should label commit fallback links as View Commit."
+    Assert-Equal "View Changes" $entry.linkText "Resolver should label single-parent commit links as View Changes."
 }
 
 Invoke-Test "Resolver handles root introductions and skips ambiguous merge commits" {
