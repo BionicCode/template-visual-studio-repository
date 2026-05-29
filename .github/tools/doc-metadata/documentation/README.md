@@ -41,7 +41,7 @@ Author: BionicCode
 ---
 
 <!-- doc-metadata-presentation:start -->
-[<b>View Changes</b>](https://github.com/owner/repo/commit/0123456789abcdef0123456789abcdef01234567)
+> [<b>View Changes</b>](https://github.com/owner/repo/commit/0123456789abcdef0123456789abcdef01234567)
 
 <details>
 <summary>Change History</summary>

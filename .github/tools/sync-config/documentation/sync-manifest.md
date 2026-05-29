@@ -5,13 +5,13 @@ Updated: 2026-05-28T21:49:05+00:00
 Author: BionicCode
 ---
 <!-- doc-metadata-presentation:start -->
-[<b>View Commit</b>](https://github.com/BionicCode/template-visual-studio-repository/commit/c12cbf6b2736e46f655865cb318f7eb28896a2cb)
+> [<b>View Changes</b>](https://github.com/BionicCode/template-visual-studio-repository/commit/c12cbf6b2736e46f655865cb318f7eb28896a2cb)
 
 <details>
 <summary>Change History</summary>
 
-- Updated: <b>2026-05-28T21:49:05+00:00</b> | Author: <b>BionicCode</b> | Changes: [<b>View Commit</b>](https://github.com/BionicCode/template-visual-studio-repository/commit/c12cbf6b2736e46f655865cb318f7eb28896a2cb)
-- Updated: <b>2026-05-28T20:39:37+00:00</b> | Author: <b>BionicCode</b> | Changes: [<b>View Commit</b>](https://github.com/BionicCode/template-visual-studio-repository/commit/940963d9defea2eba7ee3b8dc59a41642b234c6e)
+- Updated: <b>2026-05-28T21:49:05+00:00</b> | Author: <b>BionicCode</b> | Changes: [<b>View Changes</b>](https://github.com/BionicCode/template-visual-studio-repository/commit/c12cbf6b2736e46f655865cb318f7eb28896a2cb)
+- Updated: <b>2026-05-28T20:39:37+00:00</b> | Author: <b>BionicCode</b> | Changes: [<b>View Changes</b>](https://github.com/BionicCode/template-visual-studio-repository/commit/940963d9defea2eba7ee3b8dc59a41642b234c6e)
 
 </details>
 

@@ -33,7 +33,6 @@
   },
   "include": [
     "README.md",
-    "*AGENT*.md",
     "*DOCUMENTATION*.md",
     "docs/**/*.md",
     "docs/**/*.markdown",
@@ -44,16 +43,11 @@
     ".github/instructions/**/*.md",
     ".github/*COPILOT*.md",
     ".github/*copilot*.md",
-    ".github/*AGENT*.md",
-    {
-      "pattern": "**/*.txt",
-      "presentation": {
-        "enabled": false,
-        "historyLimit": 0,
-        "includeSeparator": true,
-        "spacingBreaks": 2
-      }
-    }
+    ".github/*AGENT*.md"
   ],
-  "exclude": []
+  "exclude": [
+    "*AGENT*.md",
+    ".github/tools/doc-metadata/documentation/README.md",
+    ".github/tools/sync-config/documentation/sync-manifest.md"
+  ]
 }

@@ -2231,20 +2231,20 @@ function Get-CurrentChangesLine {
         return $null
     }
 
+    return Get-PresentationLine -MetadataInfo $MetadataInfo -LinePattern $script:CurrentChangesLinkPattern
+}
+
+function Get-PresentationLine {
+    param([object] $MetadataInfo, [string] $LinePattern)
+
+    if ($null -eq $MetadataInfo -or -not $MetadataInfo.HasPresentation -or $MetadataInfo.IsPresentationMalformed) {
+        return $null
+    }
+
     foreach ($line in @($MetadataInfo.PresentationLines)) {
-        if ($line.Trim() -eq $script:PresentationStartMarker) {
-            continue
-        }
-        if ([string]::IsNullOrWhiteSpace($line)) {
-            continue
-        }
-        if ($line.Trim() -eq "<details>") {
-            return $null
-        }
-        if ($line -match $script:CurrentChangesLinkPattern) {
+        if ($line -match $LinePattern) {
             return $line
         }
-        return $null
     }
 
     $null
