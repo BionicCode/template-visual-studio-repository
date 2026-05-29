@@ -39,7 +39,7 @@ $script:ManagedFields = @("Version", "Created", "Updated", "Author")
 $script:PresentationStartMarker = "<!-- doc-metadata-presentation:start -->"
 $script:PresentationEndMarker = "<!-- doc-metadata-presentation:end -->"
 $script:PlainTextSeparator = "-" * 80
-$script:ManagedHistoryLinkPattern = '\[<b>(?<label>View Changes|View Commit)</b>\]\((?<url>[^)]+)\)'
+$script:ManagedHistoryLinkPattern = '>\s\[<b>(?<label>View Changes|View Commit)</b>\]\((?<url>[^)]+)\)'
 $script:CurrentChangesLinkPattern = "^\s*$script:ManagedHistoryLinkPattern\s*$"
 $script:TimestampPattern = "^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?[+-]\d{2}:\d{2}$"
 $script:RemediationCommand = "pwsh ./.github/scripts/doc-metadata/update-doc-metadata.ps1 -Mode Update -Root ."
@@ -2380,7 +2380,7 @@ function New-MarkdownPresentation {
             }
             "replace" {
                 if (-not [string]::IsNullOrWhiteSpace($historyUrl)) {
-                    $currentChangesLine = "[<b>$historyLinkText</b>]($historyUrl)"
+                    $currentChangesLine = "> [<b>$historyLinkText</b>]($historyUrl)"
                 }
             }
             "clear" {
