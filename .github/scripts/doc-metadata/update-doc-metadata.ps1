@@ -2836,10 +2836,7 @@ function Get-HistoryLinkInfo {
             }
         }
 
-        $validatedLinkText = [string] (Get-PropertyValue -Object $mapEntry -Name "linkText")
-        if ([string]::IsNullOrWhiteSpace($validatedLinkText) -or (-not ($validatedLinkText -eq "View Commit" -or $validatedLinkText -eq "View Changes"))) {
-            $validatedLinkText = "View Commit"
-        }
+        $validatedLinkText = if ($urlParts.Kind -eq "compare") { "View Changes" } else { "View Commit" }
         return @{
             Url = $url
             LinkText = $validatedLinkText
@@ -3901,7 +3898,7 @@ function Invoke-Main {
         }
         else {
             $repairComparison = $null
-            if ($Mode -eq "Update" -and ((-not [string]::IsNullOrWhiteSpace($EventName)) -or ((-not [string]::IsNullOrWhiteSpace($BaseSha)) -and (-not [string]::IsNullOrWhiteSpace($HeadSha))))) {
+            if ($Mode -eq "Update") {
                 $repairComparison = Get-ComparisonInfo -RequestedEventName $EventName -RequestedEventPayloadPath $EventPayloadPath -RequestedHeadSha $HeadSha -RequestedBaseSha $BaseSha
                 $report.comparison = $repairComparison
             }

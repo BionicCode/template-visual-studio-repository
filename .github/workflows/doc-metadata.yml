@@ -144,6 +144,16 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Compute local comparison base SHA for workflow dispatch
+        id: local_shas
+        if: env.EFFECTIVE_EVENT_NAME != 'pull_request' && env.EFFECTIVE_EVENT_NAME != 'push'
+        shell: pwsh
+        working-directory: work
+        run: |
+          $baseSha = (git rev-parse HEAD^ 2>&1).Trim()
+          if ($LASTEXITCODE -ne 0 -or $baseSha -match '^fatal:') { $baseSha = "" }
+          "base_sha=$baseSha" >> $env:GITHUB_OUTPUT
+
       - name: Materialize event payload
         id: event_payload
         shell: pwsh
@@ -176,6 +186,7 @@ jobs:
         env:
           DOC_METADATA_SCRIPT_EVENT_NAME: ${{ (env.EFFECTIVE_EVENT_NAME == 'pull_request' || env.EFFECTIVE_EVENT_NAME == 'push') && env.EFFECTIVE_EVENT_NAME || '' }}
           DOC_METADATA_HEAD_SHA: ${{ env.EFFECTIVE_SHA }}
+          DOC_METADATA_BASE_SHA: ${{ steps.local_shas.outputs.base_sha }}
         run: |
           ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 `
             -Mode Analyze `
@@ -183,6 +194,7 @@ jobs:
             -EventName "$env:DOC_METADATA_SCRIPT_EVENT_NAME" `
             -EventPayloadPath "${{ steps.event_payload.outputs.path }}" `
             -HeadSha "$env:DOC_METADATA_HEAD_SHA" `
+            -BaseSha "$env:DOC_METADATA_BASE_SHA" `
             -ReportOutputPath doc-metadata-analyze-report.json
 
       - name: Publish analyze outputs
@@ -339,12 +351,23 @@ jobs:
 
           "path=$payloadPath" >> $env:GITHUB_OUTPUT
 
+      - name: Compute local comparison base SHA for workflow dispatch
+        id: local_shas
+        if: env.EFFECTIVE_EVENT_NAME != 'pull_request' && env.EFFECTIVE_EVENT_NAME != 'push'
+        shell: pwsh
+        working-directory: work
+        run: |
+          $baseSha = (git rev-parse HEAD^ 2>&1).Trim()
+          if ($LASTEXITCODE -ne 0 -or $baseSha -match '^fatal:') { $baseSha = "" }
+          "base_sha=$baseSha" >> $env:GITHUB_OUTPUT
+
       - name: Analyze repairable files
         shell: pwsh
         working-directory: work
         env:
           DOC_METADATA_SCRIPT_EVENT_NAME: ${{ (env.EFFECTIVE_EVENT_NAME == 'pull_request' || env.EFFECTIVE_EVENT_NAME == 'push') && env.EFFECTIVE_EVENT_NAME || '' }}
           DOC_METADATA_HEAD_SHA: ${{ env.EFFECTIVE_SHA }}
+          DOC_METADATA_BASE_SHA: ${{ steps.local_shas.outputs.base_sha }}
           DOC_METADATA_REPAIR_PATHS_PATH: ${{ runner.temp }}/doc-metadata-repair-paths.txt
         run: |
           ../trusted/.github/scripts/doc-metadata/update-doc-metadata.ps1 `
@@ -353,6 +376,7 @@ jobs:
             -EventName "$env:DOC_METADATA_SCRIPT_EVENT_NAME" `
             -EventPayloadPath "${{ steps.event_payload.outputs.path }}" `
             -HeadSha "$env:DOC_METADATA_HEAD_SHA" `
+            -BaseSha "$env:DOC_METADATA_BASE_SHA" `
             -ReportOutputPath doc-metadata-repair-analyze-report.json
 
           $report = Get-Content -LiteralPath doc-metadata-repair-analyze-report.json -Raw | ConvertFrom-Json -Depth 32
@@ -365,6 +389,7 @@ jobs:
         env:
           DOC_METADATA_SCRIPT_EVENT_NAME: ${{ (env.EFFECTIVE_EVENT_NAME == 'pull_request' || env.EFFECTIVE_EVENT_NAME == 'push') && env.EFFECTIVE_EVENT_NAME || '' }}
           DOC_METADATA_HEAD_SHA: ${{ env.EFFECTIVE_SHA }}
+          DOC_METADATA_BASE_SHA: ${{ steps.local_shas.outputs.base_sha }}
           GITHUB_REPOSITORY_NAME: ${{ github.repository }}
           GITHUB_SERVER_URL_VALUE: ${{ github.server_url }}
           DOC_METADATA_REPAIR_PATHS_PATH: ${{ runner.temp }}/doc-metadata-repair-paths.txt
@@ -376,6 +401,7 @@ jobs:
             -EventName "$env:DOC_METADATA_SCRIPT_EVENT_NAME" `
             -EventPayloadPath "${{ steps.event_payload.outputs.path }}" `
             -HeadSha "$env:DOC_METADATA_HEAD_SHA" `
+            -BaseSha "$env:DOC_METADATA_BASE_SHA" `
             -Repository "$env:GITHUB_REPOSITORY_NAME" `
             -ServerUrl "$env:GITHUB_SERVER_URL_VALUE" `
             -OutputPath doc-metadata-links.json
@@ -387,6 +413,7 @@ jobs:
         env:
           DOC_METADATA_SCRIPT_EVENT_NAME: ${{ (env.EFFECTIVE_EVENT_NAME == 'pull_request' || env.EFFECTIVE_EVENT_NAME == 'push') && env.EFFECTIVE_EVENT_NAME || '' }}
           DOC_METADATA_HEAD_SHA: ${{ env.EFFECTIVE_SHA }}
+          DOC_METADATA_BASE_SHA: ${{ steps.local_shas.outputs.base_sha }}
           DOC_METADATA_REPAIR_PATHS_PATH: ${{ runner.temp }}/doc-metadata-repair-paths.txt
         run: |
           $paths = @(Get-Content -LiteralPath $env:DOC_METADATA_REPAIR_PATHS_PATH | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
@@ -402,6 +429,7 @@ jobs:
             -EventName "$env:DOC_METADATA_SCRIPT_EVENT_NAME" `
             -EventPayloadPath "${{ steps.event_payload.outputs.path }}" `
             -HeadSha "$env:DOC_METADATA_HEAD_SHA" `
+            -BaseSha "$env:DOC_METADATA_BASE_SHA" `
             -HistoryLinkMapPath doc-metadata-links.json `
             -ChangedFilesOutputPath doc-metadata-changed-files.json `
             -ReportOutputPath doc-metadata-repair-report.json
@@ -439,6 +467,12 @@ jobs:
             $payload = Get-Content -LiteralPath "${{ steps.event_payload.outputs.path }}" -Raw | ConvertFrom-Json -Depth 64
             if ($payload.before -and $payload.before -notmatch '^0{40}$') {
               $base = $payload.before
+            }
+          }
+          else {
+            $parentSha = (git rev-parse HEAD^ 2>&1).Trim()
+            if ($LASTEXITCODE -eq 0 -and $parentSha -notmatch '^fatal:') {
+              $base = $parentSha
             }
           }
 
