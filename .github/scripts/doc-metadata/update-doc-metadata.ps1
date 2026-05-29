@@ -2391,7 +2391,7 @@ function New-MarkdownPresentation {
             }
         }
         if ($addHistoryEntry -and -not [string]::IsNullOrWhiteSpace($historyUrl)) {
-            $newEntry = "- Updated: <b>$updated</b> | Author: <b>$author</b> | Changes: [<b>$historyLinkText</b>]($historyUrl)"
+            $newEntry = "- Updated: <b>$updated</b> | Author: <b>$author</b> | [<b>$historyLinkText</b>]($historyUrl)"
 
             [void] $seen.Add($newEntry)
             $historyLines.Add($newEntry)
