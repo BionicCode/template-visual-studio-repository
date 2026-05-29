@@ -39,8 +39,8 @@ $script:ManagedFields = @("Version", "Created", "Updated", "Author")
 $script:PresentationStartMarker = "<!-- doc-metadata-presentation:start -->"
 $script:PresentationEndMarker = "<!-- doc-metadata-presentation:end -->"
 $script:PlainTextSeparator = "-" * 80
-$script:ManagedHistoryLinkPattern = '>\s\[<b>(?<label>View Changes|View Commit)</b>\]\((?<url>[^)]+)\)'
-$script:CurrentChangesLinkPattern = "^\s*$script:ManagedHistoryLinkPattern\s*$"
+$script:ManagedHistoryLinkPattern = '[>|]\s\[<b>(?<label>View Changes|View Commit)</b>\]\((?<url>[^)]+)\)'
+$script:CurrentChangesLinkPattern = "^\s*>\s\[<b>(?<label>View Changes|View Commit)</b>\]\((?<url>[^)]+)\)\s*$"
 $script:TimestampPattern = "^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?[+-]\d{2}:\d{2}$"
 $script:RemediationCommand = "pwsh ./.github/scripts/doc-metadata/update-doc-metadata.ps1 -Mode Update -Root ."
 $script:DefaultAllowedDocumentExtensions = @(".md", ".markdown", ".txt")
@@ -2390,11 +2390,15 @@ function New-MarkdownPresentation {
                 $currentChangesLine = Get-CurrentChangesLine -MetadataInfo $sourceMetadataInfo
             }
         }
+        $prevCurrentChangesHistoryEntry = if ($Values.ContainsKey("__prevCurrentChangesHistoryEntry")) { [string] $Values["__prevCurrentChangesHistoryEntry"] } else { "" }
         if ($addHistoryEntry -and -not [string]::IsNullOrWhiteSpace($historyUrl)) {
             $newEntry = "- Updated: <b>$updated</b> | Author: <b>$author</b> | [<b>$historyLinkText</b>]($historyUrl)"
 
             [void] $seen.Add($newEntry)
             $historyLines.Add($newEntry)
+        }
+        if (-not [string]::IsNullOrWhiteSpace($prevCurrentChangesHistoryEntry) -and $seen.Add($prevCurrentChangesHistoryEntry)) {
+            $historyLines.Add($prevCurrentChangesHistoryEntry)
         }
         foreach ($line in (Get-HistoryEntryLines -MetadataInfo $sourceMetadataInfo)) {
             if ($seen.Add($line)) {
@@ -3199,6 +3203,26 @@ function Initialize-OrUpdateFile {
         else {
             "preserve"
         }
+        $sourcePresentationInfo = if ($hasPresentationDriftFromPrevious -or $canRestoreMissingPresentation) { $previousInfo } else { $currentInfo }
+        $prevCurrentChangesHistoryEntry = $null
+        if ($currentChangesLineMode -eq "clear") {
+            $prevCurrentLine = Get-CurrentChangesLine -MetadataInfo $sourcePresentationInfo
+            if (-not [string]::IsNullOrWhiteSpace($prevCurrentLine)) {
+                $prevMatch = [regex]::Match($prevCurrentLine, $script:ManagedHistoryLinkPattern)
+                if ($prevMatch.Success) {
+                    $prevUrl = $prevMatch.Groups["url"].Value
+                    $prevLabel = $prevMatch.Groups["label"].Value
+                    $prevLink = [pscustomobject]@{ Label = $prevLabel; Url = $prevUrl; Line = $prevCurrentLine }
+                    if (Test-ManagedPresentationLink -Link $prevLink -RepoPath $repoPath -Config $config) {
+                        $srcUpdated = if ($sourcePresentationInfo.Fields.ContainsKey($config.updatedField)) { [string] $sourcePresentationInfo.Fields[$config.updatedField] } else { $null }
+                        $srcAuthor = if ($sourcePresentationInfo.Fields.ContainsKey($config.authorField)) { [string] $sourcePresentationInfo.Fields[$config.authorField] } else { $null }
+                        if (-not [string]::IsNullOrWhiteSpace($srcUpdated) -and -not [string]::IsNullOrWhiteSpace($srcAuthor)) {
+                            $prevCurrentChangesHistoryEntry = "- Updated: <b>$srcUpdated</b> | Author: <b>$srcAuthor</b> | [<b>$prevLabel</b>]($prevUrl)"
+                        }
+                    }
+                }
+            }
+        }
         $values = @{
             $config.versionField = $newVersion
             $config.createdField = $newCreated
@@ -3206,9 +3230,10 @@ function Initialize-OrUpdateFile {
             $config.authorField = $newAuthor
             "__historyUrl" = $linkInfo.Url
             "__historyLinkText" = $linkInfo.LinkText
-            "__sourcePresentationInfo" = if ($hasPresentationDriftFromPrevious -or $canRestoreMissingPresentation) { $previousInfo } else { $currentInfo }
+            "__sourcePresentationInfo" = $sourcePresentationInfo
             "__addHistoryEntry" = ($bodyChanged -and $linkInfo.HasReliableContext)
             "__currentChangesLineMode" = $currentChangesLineMode
+            "__prevCurrentChangesHistoryEntry" = $prevCurrentChangesHistoryEntry
         }
         $newContent = Set-MetadataContent -Content $textFile.Content -Config $config -Values $values -NewLine $textFile.NewLine
         if ($PSCmdlet.ShouldProcess($repoPath, "Update document metadata")) {
