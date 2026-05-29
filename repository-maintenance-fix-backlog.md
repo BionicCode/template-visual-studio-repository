@@ -57,7 +57,7 @@ The script must find the current changes line by parsing the managed presentatio
 Current changes line:
 
 ```markdown
-[<b>View Changes</b>](...)
+> [<b>View Changes</b>](...)
 ```
 
 History entry:
