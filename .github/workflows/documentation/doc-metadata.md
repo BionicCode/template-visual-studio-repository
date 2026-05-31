@@ -1,8 +1,5 @@
 # Document Versioning Workflow
 
-> [!NOTE]
-> See the workflow's [README.md](../../tools/doc-metadata/documentation/README.md) for detailed information about configuration using the manifest.
-
 ## Purpose
 
 [doc-metadata.yml](../doc-metadata.yml) analyzes governed document metadata, performs safe metadata repairs when allowed, publishes repair results, and enforces a final status gate for the metadata workflow.
@@ -83,11 +80,13 @@ This workflow currently defines no custom manual-dispatch inputs.
 > [!WARNING]
 > Do not move trigger ownership for normal PR/push/schedule routing back into this file unless the orchestrator architecture is intentionally being removed or redesigned.
 
+## See also
+
+- The workflow's [README.md](../../tools/doc-metadata/documentation/README.md) for detailed information about configuration using the manifest.
+
 ## Related workflows
 
 - [Repository maintenance](repository-maintenance.md)
-- [Sync managed files](sync-managed-files.md)
-- [doc-metadata.yml](../doc-metadata.yml)
 
 ## Maintenance notes
 
