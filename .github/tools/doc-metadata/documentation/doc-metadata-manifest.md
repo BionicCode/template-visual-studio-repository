@@ -20,7 +20,7 @@ Author: BionicCode
 # Document Metadata Manifest
 
 > [!NOTE]
-> See [API referece](../documentation/doc-metadata-manifest-api.md) for manifest types  documentation.
+> See [API referece](../documentation/doc-metadata-manifest-api.md) for manifest types documentation.
 
 ## Purpose
 
@@ -159,3 +159,7 @@ Use `exclude` for intentionally broad globs. Do not rely on workflow `paths` fil
 ## Scoped Settings
 
 Scoped configuration belongs directly on include object entries so file selection and behavior stay together.
+
+## See also
+
+- [API referece](../documentation/doc-metadata-manifest-api.md) for manifest types documentation.
