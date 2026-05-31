@@ -20,7 +20,7 @@ This protocol defines how future repository ZIP reviews should be handled for th
 ## Source of truth
 
 - The repository ZIP supplied for review is the current implementation source of truth.
-- `repository-maintenance-fix-backlog.md` in the repository is the current progress-tracking source of truth.
+- `repository-maintenance-orchestrator-recovery-backlog.md` in the repository is the current progress-tracking source of truth.
 - Any `AGENTS.md` file found in the repository is review context and must be inspected before reviewing implementation.
 - Chat history can provide background, but it must not override the current repository files unless the user explicitly says so.
 
