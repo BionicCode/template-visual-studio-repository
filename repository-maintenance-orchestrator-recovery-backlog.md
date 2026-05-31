@@ -82,32 +82,42 @@ This pass is primarily review and validation. It may produce no code changes. If
 
 **Completion checklist**
 
-- [ ] Confirm repository content was restored to the intended `ff13d50` baseline or a deliberate follow-up commit on top of that baseline.
-- [ ] Confirm no temporary diagnostic files exist, especially under `.github/scripts/doc-metadata/tests/`.
-- [ ] Confirm root-level planning prompt files are either intentionally kept or removed in a separate cleanup commit.
-- [ ] Inspect `AGENTS.md` and repository review protocol before reviewing implementation.
-- [ ] Confirm `.github/workflows/repository-maintenance.yml` exists.
-- [ ] Confirm `.github/workflows/doc-metadata.yml` exists.
-- [ ] Confirm `.github/workflows/sync-managed-files.yml` exists.
-- [ ] Confirm `repository-maintenance.yml` owns normal `pull_request`, `push`, `schedule`, and `workflow_dispatch` entry points.
-- [ ] Confirm `doc-metadata.yml` has only `workflow_call` and `workflow_dispatch` triggers.
-- [ ] Confirm `sync-managed-files.yml` has only `workflow_call` and `workflow_dispatch` triggers.
-- [ ] Confirm repository-maintenance calls doc-metadata before sync-managed-files.
-- [ ] Confirm sync-managed-files is the final maintenance child workflow.
-- [ ] Confirm the sync guard allows sync when doc-metadata is out of scope.
-- [ ] Confirm the sync guard allows sync after doc-metadata succeeds.
-- [ ] Confirm the sync guard does not allow sync when doc-metadata was expected but skipped, failed, or cancelled.
-- [ ] Confirm schedule ownership is centralized in `repository-maintenance.yml`, not in child workflows.
-- [ ] Confirm branch/tag guards prevent tag pushes from satisfying branch-based maintenance conditions.
-- [ ] Confirm direct/manual dispatch guards use branch context where needed.
-- [ ] Confirm `sync-managed-files.yml` still delegates to `BionicCode/workflows/.github/workflows/sync-files-from-manifest.yml@main`.
-- [ ] Confirm no PowerShell engine scripts were changed as part of the restored orchestration baseline.
-- [ ] Confirm no manifests or schemas were changed as part of the restored orchestration baseline.
-- [ ] Run YAML validation for all workflow files.
-- [ ] Run PowerShell parser validation for doc-metadata scripts and tests.
+- [x] Confirm repository content was restored to the intended `ff13d50` baseline or a deliberate follow-up commit on top of that baseline.
+- [x] Confirm no temporary diagnostic files exist, especially under `.github/scripts/doc-metadata/tests/`.
+- [x] Confirm root-level planning prompt files are either intentionally kept or removed in a separate cleanup commit.
+- [x] Inspect `AGENTS.md` and repository review protocol before reviewing implementation.
+- [x] Confirm `.github/workflows/repository-maintenance.yml` exists.
+- [x] Confirm `.github/workflows/doc-metadata.yml` exists.
+- [x] Confirm `.github/workflows/sync-managed-files.yml` exists.
+- [x] Confirm `repository-maintenance.yml` owns normal `pull_request`, `push`, `schedule`, and `workflow_dispatch` entry points.
+- [x] Confirm `doc-metadata.yml` has only `workflow_call` and `workflow_dispatch` triggers.
+- [x] Confirm `sync-managed-files.yml` has only `workflow_call` and `workflow_dispatch` triggers.
+- [x] Confirm repository-maintenance calls doc-metadata before sync-managed-files.
+- [x] Confirm sync-managed-files is the final maintenance child workflow.
+- [x] Confirm the sync guard allows sync when doc-metadata is out of scope.
+- [x] Confirm the sync guard allows sync after doc-metadata succeeds.
+- [x] Confirm the sync guard does not allow sync when doc-metadata was expected but skipped, failed, or cancelled.
+- [x] Confirm schedule ownership is centralized in `repository-maintenance.yml`, not in child workflows.
+- [x] Confirm branch/tag guards prevent tag pushes from satisfying branch-based maintenance conditions.
+- [x] Confirm direct/manual dispatch guards use branch context where needed.
+- [x] Confirm `sync-managed-files.yml` still delegates to `BionicCode/workflows/.github/workflows/sync-files-from-manifest.yml@main`.
+- [x] Confirm no PowerShell engine scripts were changed as part of the restored orchestration baseline.
+- [x] Confirm no manifests or schemas were changed as part of the restored orchestration baseline.
+- [x] Run YAML validation for all workflow files.
+- [x] Run PowerShell parser validation for doc-metadata scripts and tests.
 - [ ] Run doc-metadata acceptance tests locally.
 - [ ] Review the acceptance test suite itself for stale workflow-shape assertions or weak fixtures.
-- [ ] Report any failing test as either baseline-blocking or clearly out of scope.
+- [x] Report any failing test as either baseline-blocking or clearly out of scope.
+
+**Review note — 2026-05-31 ZIP review**
+
+- Current inspected HEAD: `2b4e68514b68f3b87b2582a289a70ae32d40123e`.
+- Compared with `ff13d50ba29de3aab658571ddae2f809570a44f5`, the only semantic tracked changes are removal of the two root-level plan prompt files and addition/update of `repository-maintenance-orchestrator-recovery-backlog.md` plus `repository-review-protocol.md`.
+- Git reported many modified files in the extracted ZIP because of CRLF/LF checkout differences; `git diff --stat --ignore-space-at-eol` was empty.
+- YAML parse validation passed for all workflow files.
+- PowerShell parser validation passed for all `.github/**/*.ps1` files.
+- The doc-metadata acceptance suite did not complete in the Linux sandbox; it timed out after the first four PASS lines. Leave the acceptance-test checkbox unchecked until it passes locally or the timeout is diagnosed.
+- `repository-review-protocol.md` still names the old backlog file `repository-maintenance-fix-backlog.md`; the active root backlog is now `repository-maintenance-orchestrator-recovery-backlog.md`.
 
 **Out of scope for this pass**
 
