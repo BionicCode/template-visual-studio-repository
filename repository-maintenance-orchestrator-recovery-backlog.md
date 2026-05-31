@@ -1,20 +1,5 @@
 # Repository Maintenance Orchestrator Recovery Backlog
 
-This document is not an instruction file for coding agents. All agents like Codex or Copilot must ignore this file and under no circumstance edit it.
-
-Audience:
-- Human maintainer
-- ChatGPT project review sessions
-
-Do not treat this file as implementation requirements.
-Do not execute backlog items from this file.
-Do not modify code to satisfy this document unless the user explicitly asks for a review against this document.
-
-Purpose:
-This file helps ChatGPT evaluate Codex/Copilot output after the fact.
-
----
-
 This document tracks recovery and follow-up work after restoring the repository to the `ff13d50`-based orchestrator baseline.
 
 It replaces the earlier regression-fix backlog that was written during the failed Sonnet/Codex repair attempts. Some lessons from those attempts remain useful, but they are no longer assumed to describe the current repository state.
@@ -82,42 +67,32 @@ This pass is primarily review and validation. It may produce no code changes. If
 
 **Completion checklist**
 
-- [x] Confirm repository content was restored to the intended `ff13d50` baseline or a deliberate follow-up commit on top of that baseline.
-- [x] Confirm no temporary diagnostic files exist, especially under `.github/scripts/doc-metadata/tests/`.
-- [x] Confirm root-level planning prompt files are either intentionally kept or removed in a separate cleanup commit.
-- [x] Inspect `AGENTS.md` and repository review protocol before reviewing implementation.
-- [x] Confirm `.github/workflows/repository-maintenance.yml` exists.
-- [x] Confirm `.github/workflows/doc-metadata.yml` exists.
-- [x] Confirm `.github/workflows/sync-managed-files.yml` exists.
-- [x] Confirm `repository-maintenance.yml` owns normal `pull_request`, `push`, `schedule`, and `workflow_dispatch` entry points.
-- [x] Confirm `doc-metadata.yml` has only `workflow_call` and `workflow_dispatch` triggers.
-- [x] Confirm `sync-managed-files.yml` has only `workflow_call` and `workflow_dispatch` triggers.
-- [x] Confirm repository-maintenance calls doc-metadata before sync-managed-files.
-- [x] Confirm sync-managed-files is the final maintenance child workflow.
-- [x] Confirm the sync guard allows sync when doc-metadata is out of scope.
-- [x] Confirm the sync guard allows sync after doc-metadata succeeds.
-- [x] Confirm the sync guard does not allow sync when doc-metadata was expected but skipped, failed, or cancelled.
-- [x] Confirm schedule ownership is centralized in `repository-maintenance.yml`, not in child workflows.
-- [x] Confirm branch/tag guards prevent tag pushes from satisfying branch-based maintenance conditions.
-- [x] Confirm direct/manual dispatch guards use branch context where needed.
-- [x] Confirm `sync-managed-files.yml` still delegates to `BionicCode/workflows/.github/workflows/sync-files-from-manifest.yml@main`.
-- [x] Confirm no PowerShell engine scripts were changed as part of the restored orchestration baseline.
-- [x] Confirm no manifests or schemas were changed as part of the restored orchestration baseline.
-- [x] Run YAML validation for all workflow files.
-- [x] Run PowerShell parser validation for doc-metadata scripts and tests.
-- [x] Run doc-metadata acceptance tests locally.
-- [x] Review the acceptance test suite itself for stale workflow-shape assertions or weak fixtures.
-- [x] Report any failing test as either baseline-blocking or clearly out of scope.
-
-**Review note — 2026-05-31 ZIP review**
-
-- Current inspected HEAD: `2b4e68514b68f3b87b2582a289a70ae32d40123e`.
-- Compared with `ff13d50ba29de3aab658571ddae2f809570a44f5`, the only semantic tracked changes are removal of the two root-level plan prompt files and addition/update of `repository-maintenance-orchestrator-recovery-backlog.md` plus `repository-review-protocol.md`.
-- Git reported many modified files in the extracted ZIP because of CRLF/LF checkout differences; `git diff --stat --ignore-space-at-eol` was empty.
-- YAML parse validation passed for all workflow files.
-- PowerShell parser validation passed for all `.github/**/*.ps1` files.
-- The doc-metadata acceptance suite did not complete in the Linux sandbox; it timed out after the first four PASS lines. Leave the acceptance-test checkbox unchecked until it passes locally or the timeout is diagnosed.
-- `repository-review-protocol.md` still names the old backlog file `repository-maintenance-fix-backlog.md`; the active root backlog is now `repository-maintenance-orchestrator-recovery-backlog.md`.
+- [ ] Confirm repository content was restored to the intended `ff13d50` baseline or a deliberate follow-up commit on top of that baseline.
+- [ ] Confirm no temporary diagnostic files exist, especially under `.github/scripts/doc-metadata/tests/`.
+- [ ] Confirm root-level planning prompt files are either intentionally kept or removed in a separate cleanup commit.
+- [ ] Inspect `AGENTS.md` and repository review protocol before reviewing implementation.
+- [ ] Confirm `.github/workflows/repository-maintenance.yml` exists.
+- [ ] Confirm `.github/workflows/doc-metadata.yml` exists.
+- [ ] Confirm `.github/workflows/sync-managed-files.yml` exists.
+- [ ] Confirm `repository-maintenance.yml` owns normal `pull_request`, `push`, `schedule`, and `workflow_dispatch` entry points.
+- [ ] Confirm `doc-metadata.yml` has only `workflow_call` and `workflow_dispatch` triggers.
+- [ ] Confirm `sync-managed-files.yml` has only `workflow_call` and `workflow_dispatch` triggers.
+- [ ] Confirm repository-maintenance calls doc-metadata before sync-managed-files.
+- [ ] Confirm sync-managed-files is the final maintenance child workflow.
+- [ ] Confirm the sync guard allows sync when doc-metadata is out of scope.
+- [ ] Confirm the sync guard allows sync after doc-metadata succeeds.
+- [ ] Confirm the sync guard does not allow sync when doc-metadata was expected but skipped, failed, or cancelled.
+- [ ] Confirm schedule ownership is centralized in `repository-maintenance.yml`, not in child workflows.
+- [ ] Confirm branch/tag guards prevent tag pushes from satisfying branch-based maintenance conditions.
+- [ ] Confirm direct/manual dispatch guards use branch context where needed.
+- [ ] Confirm `sync-managed-files.yml` still delegates to `BionicCode/workflows/.github/workflows/sync-files-from-manifest.yml@main`.
+- [ ] Confirm no PowerShell engine scripts were changed as part of the restored orchestration baseline.
+- [ ] Confirm no manifests or schemas were changed as part of the restored orchestration baseline.
+- [ ] Run YAML validation for all workflow files.
+- [ ] Run PowerShell parser validation for doc-metadata scripts and tests.
+- [ ] Run doc-metadata acceptance tests locally.
+- [ ] Review the acceptance test suite itself for stale workflow-shape assertions or weak fixtures.
+- [ ] Report any failing test as either baseline-blocking or clearly out of scope.
 
 **Out of scope for this pass**
 
@@ -178,7 +153,66 @@ This pass is primarily review and validation. It may produce no code changes. If
 
 ---
 
-### P1-B — Canonical current/history link behavior
+
+### P1-B — Documentation correctness and structure audit
+
+**Status:** do this before the next behavior-changing implementation pass, or at minimum before asking a coding agent to rely on repository Markdown documentation.
+
+**Problem**
+
+The current documentation contains stale, misplaced, incomplete, or redundant pages. This is a practical risk because coding agents may index repository Markdown files and infer behavior from them even when a handoff tries to limit scope.
+
+Known examples to verify and resolve:
+
+- `.github/tools/doc-metadata/documentation/types/report-analysis.md` describes workflow/report output, not a manifest JSON type. It does not belong under `types/`.
+- `report-analysis.md` must be verified against the implementation before being kept. The tool appears to have console reporting, optional `GITHUB_STEP_SUMMARY` output, and `-ReportOutputPath` JSON output, but the document must match actual script/workflow behavior exactly.
+- `.github/tools/doc-metadata/documentation/types/manifest-document.md` appears redundant with `doc-metadata-manifest.md` and/or the API reference unless it is rewritten as a real schema object reference.
+- The manifest reference is missing dedicated API pages for `exclude` and `presentation`.
+- `metadata-settings.md` is incomplete as an object reference. It should explain the purpose and behavior impact of the `metadata` object, list all fields, and link each field to a dedicated field/value reference page.
+- Fields such as `versioningMode`, `timestampFormat`, `format`, `placement`, field-name settings, and comment-block settings need dedicated reference pages that document valid values, defaults, constraints, and behavior effects.
+- The same documentation pattern should apply to each manifest object: the object page explains purpose/context and lists fields; field/value pages explain valid values and constraints.
+- Documentation must not present stale semantics such as `documentEligibility` as an approved final model if the intended design is still convention-based `included minus excluded` governance.
+
+**Documentation model to establish**
+
+Object pages should:
+
+- explain the object's purpose;
+- explain where the object is valid;
+- explain how it steers runtime behavior;
+- list all fields;
+- link each field to its dedicated field/value reference page;
+- distinguish immutable/generated metadata concepts from user-configurable fields where relevant.
+
+Field/value pages should:
+
+- define the key;
+- list valid values or value shape;
+- state defaults;
+- state constraints and invalid combinations;
+- show minimal examples;
+- mention behavior impact and validation errors.
+
+Workflow-output documentation should live with workflow documentation, not manifest type references. For example, a verified `report-analysis.md` should be moved or recreated near `.github/workflows/documentation/doc-metadata.md`, and that workflow documentation should link to it.
+
+**Completion checklist**
+
+- [ ] Inventory all doc-metadata documentation files and classify them as concept, workflow, manifest object reference, field/value reference, or obsolete/redundant.
+- [ ] Verify whether the documented JSON report is implemented by `update-doc-metadata.ps1` and/or consumed by `.github/workflows/doc-metadata.yml`.
+- [ ] Decide whether `report-analysis.md` should be kept, moved next to workflow documentation, rewritten, or deleted.
+- [ ] Decide whether `manifest-document.md` should be rewritten as a real object reference or deleted as redundant.
+- [ ] Add or plan dedicated reference pages for `exclude` and `presentation`.
+- [ ] Rewrite or plan `metadata-settings.md` as a proper object page with field links.
+- [ ] Add or plan dedicated field/value pages for all metadata fields, including `format`, `placement`, `versionField`, `createdField`, `updatedField`, `authorField`, `versioningMode`, `timestampFormat`, `commentStart`, `commentLinePrefix`, and `commentEnd`.
+- [ ] Add or plan dedicated field/value pages for all presentation fields, including `enabled`, `historyLimit`, `includeSeparator`, and `spacingBreaks`.
+- [ ] Verify that docs do not claim unsupported behavior or stale implementation details.
+- [ ] Verify that examples match the current schema and intended convention-based governance model.
+- [ ] Verify all relative links after any move/delete/rename.
+- [ ] Do not edit PowerShell behavior, workflow behavior, manifests, or schemas during this documentation-only pass unless the user explicitly opens a separate implementation task.
+
+---
+
+### P1-C — Canonical current/history link behavior
 
 **Status:** still desired, but do not assume the restored baseline currently has this regression. Verify first, then implement in a dedicated pass.
 
@@ -246,7 +280,7 @@ Legacy generated forms containing `Changes:` are not supported.
 
 ---
 
-### P1-C — Protected metadata tamper coverage
+### P1-D — Protected metadata tamper coverage
 
 **Status:** verify first. Implement only if restored baseline lacks coverage or behavior.
 
@@ -269,7 +303,7 @@ Protected metadata fields are generated state. A metadata-only change is not a l
 
 ---
 
-### P1-D — Convention-based manifest governance
+### P1-E — Convention-based manifest governance
 
 **Status:** deferred semantic fix. Do not mix this into orchestrator recovery.
 
@@ -309,7 +343,7 @@ All other settings apply only after a file is already governed.
 
 ---
 
-### P1-E — Document the convention-based manifest model
+### P1-F — Document the convention-based manifest model
 
 **Priority rule:** do this after P1-D. Do not document stale semantics before implementation is fixed.
 
@@ -330,7 +364,7 @@ All other settings apply only after a file is already governed.
 
 ---
 
-### P1-F — Final workflow/tool documentation alignment
+### P1-G — Final workflow/tool documentation alignment
 
 **Priority rule:** do this after behavior stabilizes. It is lower priority than behavior fixes, but higher priority than deferred performance cleanup.
 
@@ -475,14 +509,15 @@ These are not active tasks. They document failure modes to avoid.
 ## Current recommended order
 
 1. **P0-A** — Verify restored `ff13d50` orchestrator baseline.
-2. **P0-B** — Fix only confirmed restored-baseline workflow issues.
+2. **P0-B** — Not triggered unless P0-A finds a restored-baseline workflow issue.
 3. **P1-A** — Verify real repository-maintenance workflow execution.
-4. **P1-B** — Implement/verify canonical current/history link behavior.
-5. **P1-C** — Add/verify protected metadata tamper coverage.
-6. **P1-D** — Fix convention-based manifest governance.
-7. **P1-E** — Document the convention-based manifest model.
-8. **P1-F** — Final workflow/tool documentation alignment.
-9. **P2-A** — Design sync/doc-metadata ownership arbitration.
-10. **P2-B** — Define excluded/re-included lifecycle semantics.
-11. **P2-C** — Finalize workflow-repository variant.
-12. **P2-D** — Performance follow-up.
+4. **P1-B** — Documentation correctness and structure audit.
+5. **P1-C** — Implement/verify canonical current/history link behavior.
+6. **P1-D** — Add/verify protected metadata tamper coverage.
+7. **P1-E** — Fix convention-based manifest governance.
+8. **P1-F** — Document the convention-based manifest model.
+9. **P1-G** — Final workflow/tool documentation alignment.
+10. **P2-A** — Design sync/doc-metadata ownership arbitration.
+11. **P2-B** — Define excluded/re-included lifecycle semantics.
+12. **P2-C** — Finalize workflow-repository variant.
+13. **P2-D** — Performance follow-up.
