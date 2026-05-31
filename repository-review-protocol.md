@@ -1,6 +1,6 @@
 # Repository Review Protocol
 
-This document is not an instruction file for coding agents.
+This document is not an instruction file for coding agents. All agents like Codex or Copilot must ignore this file and under no circumstance edit it.
 
 Audience:
 - Human maintainer
@@ -57,7 +57,7 @@ The whole-repository pass is broad, not a full line-by-line audit of every file 
 
 ### 2. Backlog conformance pass
 
-After the safety pass, compare the implementation against `repository-maintenance-fix-backlog.md`.
+After the safety pass, compare the implementation against `repository-maintenance-orchestrator-recovery-backlog.md`.
 
 Required checks:
 

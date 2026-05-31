@@ -1,6 +1,6 @@
 # Repository Maintenance Orchestrator Recovery Backlog
 
-This document is not an instruction file for coding agents.
+This document is not an instruction file for coding agents. All agents like Codex or Copilot must ignore this file and under no circumstance edit it.
 
 Audience:
 - Human maintainer
@@ -105,8 +105,8 @@ This pass is primarily review and validation. It may produce no code changes. If
 - [x] Confirm no manifests or schemas were changed as part of the restored orchestration baseline.
 - [x] Run YAML validation for all workflow files.
 - [x] Run PowerShell parser validation for doc-metadata scripts and tests.
-- [ ] Run doc-metadata acceptance tests locally.
-- [ ] Review the acceptance test suite itself for stale workflow-shape assertions or weak fixtures.
+- [x] Run doc-metadata acceptance tests locally.
+- [x] Review the acceptance test suite itself for stale workflow-shape assertions or weak fixtures.
 - [x] Report any failing test as either baseline-blocking or clearly out of scope.
 
 **Review note — 2026-05-31 ZIP review**
