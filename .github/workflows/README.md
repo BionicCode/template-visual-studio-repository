@@ -10,7 +10,7 @@ This directory contains the repository's GitHub Actions workflow definitions and
 | Workflow display name | File | Summary |
 | --- | --- | --- |
 | [Repository maintenance](documentation/repository-maintenance.md) | [repository-maintenance.yml](repository-maintenance.yml) | Central orchestrator that owns maintenance triggers, normalizes event context, runs document metadata first, and runs managed-file sync last under an explicit skip/failure contract. |
-| [Document metadata](documentation/doc-metadata.md) | [doc-metadata.yml](doc-metadata.yml) | Passive reusable workflow that analyzes governed document metadata, performs safe repairs when allowed, and enforces the final metadata status gate. |
+| [Document versioning](documentation/doc-metadata.md) | [doc-metadata.yml](doc-metadata.yml) | Passive reusable workflow that analyzes governed document metadata, performs safe repairs when allowed, and enforces the final metadata status gate. |
 | [Sync managed files](documentation/sync-managed-files.md) | [sync-managed-files.yml](sync-managed-files.yml) | Passive reusable local wrapper that inspects the sync manifest and delegates init or sync execution to the shared workflow in `BionicCode/workflows`. |
 
 ## Directory Structure

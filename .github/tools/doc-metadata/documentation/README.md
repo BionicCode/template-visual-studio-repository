@@ -17,16 +17,21 @@ Author: BionicCode
 <br>
 <!-- doc-metadata-presentation:end -->
 
-# Document Metadata Automation
+# Document Versioning
 
 ## What this tool does
 
-The document metadata tool keeps human-readable metadata headers current for governed UTF-8 document files. It writes managed fields such as `Version`, `Created`, `Updated`, and `Author`, adds a generated presentation area for Markdown files, and verifies that document revisions match body-content changes.
+The document versioning tool keeps human-readable metadata headers current for governed UTF-8 document files. It writes managed fields such as `Version`, `Created`, `Updated`, and `Author`, adds a generated presentation area for Markdown files, and verifies that document revisions match body-content changes.
 
 The repository manifest is the source of truth. The hosted workflow intentionally does not duplicate manifest include patterns in `paths` filters because GitHub evaluates those filters before the workflow starts. If trigger filters are narrower than the manifest, governed files such as `AGENTS.md`, `DOCUMENTATION.md`, or nested tooling docs can be missed before the tool has a chance to analyze them.
 
 > [!IMPORTANT]
 > First-time setup usually requires one Bootstrap or Repair run to initialize existing governed files. For migrated existing files, `Created` means metadata initialization time unless a future Git-history inference feature is added.
+
+## Configuration
+
+The workflow is configured using the manifest [doc-metadata-manifest.json](../doc-metadata-manifest.json). The manifest specifies tracked files and allows customization of the metadata header. See [doc-metadata-maniifest.md](doc-metadata-manifest.md) to learn more about the manifest configuration.
+
 
 ## Metadata Header
 

@@ -1,7 +1,7 @@
-# Document metadata
+# Document Versioning Workflow
 
 > [!NOTE]
-> See [tool documentation](../../tools/doc-metadata/documentation/doc-metadata-manifest.md) for detailed information about configuration using the manifest.
+> See the workflow's [README.md](../../tools/doc-metadata/documentation/README.md) for detailed information about configuration using the manifest.
 
 ## Purpose
 
