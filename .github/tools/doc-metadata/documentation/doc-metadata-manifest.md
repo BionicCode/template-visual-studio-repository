@@ -1,7 +1,7 @@
 ---
-Version: 1
+Version: 2
 Created: 2026-05-26T19:08:33+00:00
-Updated: 2026-05-26T19:08:33+00:00
+Updated: 2026-06-01T00:00:00+00:00
 Author: BionicCode
 ---
 <!-- doc-metadata-presentation:start -->
@@ -20,18 +20,20 @@ Author: BionicCode
 # Document Metadata Manifest
 
 > [!NOTE]
-> See [API referece](../documentation/doc-metadata-manifest-api.md) for manifest types documentation.
+> See the [API reference](doc-metadata-manifest-api.md) for object and field reference pages.
 
 ## Purpose
 
-[doc-metadata-manifest.json](../doc-metadata-manifest.schema.json) defines candidate files, metadata defaults, presentation defaults, and eligibility rules. It is the only governance policy source for document metadata.
+[doc-metadata-manifest.json](../doc-metadata-manifest.json) defines candidate files, candidate removals, metadata defaults, presentation defaults, scoped include settings, and current compatibility eligibility rules.
 
-## Defaults First
+It is the repository-local configuration surface for document metadata.
 
-Defaults apply to every string include entry and to object include entries unless they override specific settings.
+## Minimal Shape
 
 ```json
 {
+  "$schema": "./doc-metadata-manifest.schema.json",
+  "version": 1,
   "defaults": {
     "metadata": {
       "format": "yaml-front-matter",
@@ -49,21 +51,28 @@ Defaults apply to every string include entry and to object include entries unles
       "includeSeparator": true,
       "spacingBreaks": 2
     }
-  }
+  },
+  "documentEligibility": {
+    "allowedExtensions": [".md", ".markdown", ".txt"],
+    "additionalAllowedExtensions": [],
+    "deniedExtensions": [],
+    "deniedPaths": [],
+    "allowExtensionless": false,
+    "failOnIneligibleMatches": false
+  },
+  "include": ["README.md"],
+  "exclude": []
 }
 ```
 
-File-format conventions are applied after manifest defaults. Markdown files get rich presentation by default. Plain text files get compact metadata by default.
-
 ## Participation Flow
 
-`include` selects candidate files.
+1. [`include`](reference/include.md) selects candidate files.
+2. [`exclude`](reference/exclude.md) removes candidates from broad include patterns.
+3. [`documentEligibility`](reference/document-eligibility.md) currently filters candidates by extension, denied path, strict UTF-8 text decoding, and binary detection.
+4. [`defaults`](reference/defaults.md) and scoped include settings determine metadata and presentation output.
 
-`exclude` removes candidates from broad include patterns. The default is `[]`.
-
-`documentEligibility` filters candidates by extension, denied path, strict UTF-8 text decoding, and binary detection.
-
-Only eligible governed files can be analyzed, updated, bootstrapped, or repaired.
+`documentEligibility` is current implemented behavior, but it is not documented here as the preferred future governance model.
 
 ## Include Entries
 
@@ -79,7 +88,7 @@ String include entries use defaults:
 }
 ```
 
-Object include entries use `pattern` plus scoped settings:
+Object include entries use [`pattern`](reference/fields/include-pattern.md) plus scoped settings:
 
 ```json
 {
@@ -98,39 +107,12 @@ Object include entries use `pattern` plus scoped settings:
 
 If multiple include entries match the same file, their effective configuration must be identical. Conflicting matches fail validation instead of being silently merged.
 
-## Eligibility Example
-
-The pattern `AGENTS.*` may match `AGENTS.md` and `AGENTS.cs`. With default eligibility, only `AGENTS.md` is managed because `.cs` is not a default document extension.
+## Broad Include With Exclude
 
 ```json
 {
-  "include": [
-    "AGENTS.*"
-  ],
-  "documentEligibility": {
-    "allowedExtensions": [".md", ".markdown", ".txt"],
-    "additionalAllowedExtensions": [],
-    "deniedExtensions": [],
-    "deniedPaths": [],
-    "allowExtensionless": false,
-    "failOnIneligibleMatches": false
-  }
-}
-```
-
-> [!TIP]
-> Add `additionalAllowedExtensions` for document-like formats such as `.adoc`. Do not broadly allow source or config extensions unless the files are truly human-facing documents.
-
-## Broad Include with Exclude
-
-```json
-{
-  "include": [
-    "docs/**/*"
-  ],
-  "exclude": [
-    "docs/generated/**"
-  ]
+  "include": ["docs/**/*"],
+  "exclude": ["docs/generated/**"]
 }
 ```
 
@@ -156,10 +138,10 @@ Use `exclude` for intentionally broad globs. Do not rely on workflow `paths` fil
 }
 ```
 
-## Scoped Settings
+## See Also
 
-Scoped configuration belongs directly on include object entries so file selection and behavior stay together.
-
-## See also
-
-- [API referece](../documentation/doc-metadata-manifest-api.md) for manifest types documentation.
+- [API reference](doc-metadata-manifest-api.md)
+- [Manifest](reference/manifest.md)
+- [Metadata](reference/metadata.md)
+- [Presentation](reference/presentation.md)
+- [Document eligibility](reference/document-eligibility.md)

@@ -83,6 +83,7 @@ This workflow currently defines no custom manual-dispatch inputs.
 ## See also
 
 - The workflow's [README.md](../../tools/doc-metadata/documentation/README.md) for detailed information about configuration using the manifest.
+- [Document metadata reporting](doc-metadata-reporting.md) for console, JSON, summary, and workflow report outputs.
 
 ## Related workflows
 

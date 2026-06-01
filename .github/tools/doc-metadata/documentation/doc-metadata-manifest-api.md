@@ -1,7 +1,7 @@
 ---
-Version: 1
+Version: 2
 Created: 2026-05-26T19:08:33+00:00
-Updated: 2026-05-26T19:08:33+00:00
+Updated: 2026-06-01T00:00:00+00:00
 Author: BionicCode
 ---
 <!-- doc-metadata-presentation:start -->
@@ -19,71 +19,65 @@ Author: BionicCode
 
 # Manifest API Reference
 
-## ManifestDocument
+This page is the navigation index for the document metadata manifest contract. The schema remains the source of truth for validation.
 
-| Property | Type | Required | Description |
-| --- | --- | --- | --- |
-| `$schema` | string | yes | Schema URI, normally `./doc-metadata-manifest.schema.json`. |
-| `version` | integer | yes | Must be `1`. |
-| `defaults` | object | yes | Default metadata and presentation settings. |
-| `documentEligibility` | object | no | Safety filter for manifest matches. Runtime defaults apply when omitted. |
-| `include` | array | yes | Candidate file patterns or scoped include objects. |
-| `exclude` | array | yes | Candidate-removal patterns. Default manifest value is `[]`. |
+## Object References
 
-Unknown top-level properties fail validation.
+| Object | Purpose |
+| --- | --- |
+| [Manifest](reference/manifest.md) | Top-level manifest fields and validation boundaries. |
+| [Defaults](reference/defaults.md) | Default metadata and presentation settings. |
+| [Metadata](reference/metadata.md) | Managed metadata block settings. |
+| [Presentation](reference/presentation.md) | Generated presentation settings. |
+| [Include](reference/include.md) | Candidate file selection. |
+| [Include entry](reference/include-entry.md) | Object include entry with scoped settings. |
+| [Exclude](reference/exclude.md) | Candidate removal patterns. |
+| [Document eligibility](reference/document-eligibility.md) | Current compatibility filter for manifest matches. |
 
-## defaults.metadata
+## Metadata Fields
 
-| Property | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `format` | string | yes | `yaml-front-matter` | `yaml-front-matter` or `comment-block`. |
-| `placement` | string | yes | `top` | `top` or `bottom`; YAML front matter supports `top` only. |
-| `versionField` | string | yes | `Version` | Managed revision field. |
-| `createdField` | string | yes | `Created` | Managed initialization timestamp field. |
-| `updatedField` | string | yes | `Updated` | Managed body-change timestamp field. |
-| `authorField` | string | yes | `Author` | Managed content author field. |
-| `versioningMode` | string | no | `body-content-change` | Only supported value. |
-| `timestampFormat` | string | no | `rfc3339-utc` | Generated timestamps use UTC `+00:00`. |
-| `commentStart` | string | conditional | none | Required when effective format is `comment-block`. |
-| `commentLinePrefix` | string | no | none | Optional prefix for comment-block metadata lines. |
-| `commentEnd` | string | conditional | none | Required when effective format is `comment-block`. |
+| Field | Reference |
+| --- | --- |
+| `format` | [format](reference/fields/format.md) |
+| `placement` | [placement](reference/fields/placement.md) |
+| `versionField` | [versionField](reference/fields/version-field.md) |
+| `createdField` | [createdField](reference/fields/created-field.md) |
+| `updatedField` | [updatedField](reference/fields/updated-field.md) |
+| `authorField` | [authorField](reference/fields/author-field.md) |
+| `versioningMode` | [versioningMode](reference/fields/versioning-mode.md) |
+| `timestampFormat` | [timestampFormat](reference/fields/timestamp-format.md) |
+| `commentStart` | [commentStart](reference/fields/comment-start.md) |
+| `commentLinePrefix` | [commentLinePrefix](reference/fields/comment-line-prefix.md) |
+| `commentEnd` | [commentEnd](reference/fields/comment-end.md) |
 
-## defaults.presentation
+## Presentation Fields
 
-| Property | Type | Default | Description |
-| --- | --- | --- | --- |
-| `enabled` | boolean | `true` | Enables rich presentation for formats that support it. |
-| `historyLimit` | integer or null | `20` | Embedded history entry limit; `0` suppresses entries. |
-| `includeSeparator` | boolean | `true` | Adds a visual separator before document body. |
-| `spacingBreaks` | integer | `2` | Markdown emits `<br>` lines; plain text emits physical blank lines. |
+| Field | Reference |
+| --- | --- |
+| `enabled` | [enabled](reference/fields/enabled.md) |
+| `historyLimit` | [historyLimit](reference/fields/history-limit.md) |
+| `includeSeparator` | [includeSeparator](reference/fields/include-separator.md) |
+| `spacingBreaks` | [spacingBreaks](reference/fields/spacing-breaks.md) |
 
-## include
+## Eligibility Fields
 
-Each entry is either a string pattern or an object:
+| Field | Reference |
+| --- | --- |
+| `allowedExtensions` | [allowedExtensions](reference/fields/allowed-extensions.md) |
+| `additionalAllowedExtensions` | [additionalAllowedExtensions](reference/fields/additional-allowed-extensions.md) |
+| `deniedExtensions` | [deniedExtensions](reference/fields/denied-extensions.md) |
+| `deniedPaths` | [deniedPaths](reference/fields/denied-paths.md) |
+| `allowExtensionless` | [allowExtensionless](reference/fields/allow-extensionless.md) |
+| `failOnIneligibleMatches` | [failOnIneligibleMatches](reference/fields/fail-on-ineligible-matches.md) |
 
-```json
-{
-  "pattern": "src/*AGENT*.md",
-  "metadata": {
-    "versionField": "Version"
-  },
-  "presentation": {
-    "historyLimit": 30
-  }
-}
-```
+## Pattern Fields
 
-Object entries inherit defaults and override only specified properties. Use `pattern`, not `fileName`, because entries may be globs.
+| Field | Reference |
+| --- | --- |
+| include pattern / `pattern` | [include pattern](reference/fields/include-pattern.md) |
+| exclude pattern | [exclude pattern](reference/fields/exclude-pattern.md) |
 
-## documentEligibility
+## See Also
 
-| Property | Type | Runtime Default | Description |
-| --- | --- | --- | --- |
-| `allowedExtensions` | string[] | `.md`, `.markdown`, `.txt` | Base allowed extensions; if present, replaces defaults. |
-| `additionalAllowedExtensions` | string[] | `[]` | Appended allowed extensions. |
-| `deniedExtensions` | string[] | `[]` | Always wins over allowed extensions. |
-| `deniedPaths` | string[] | `[]` | Repository-relative denied path/glob patterns. |
-| `allowExtensionless` | boolean | `false` | Allows files with no extension. |
-| `failOnIneligibleMatches` | boolean | `false` | Fails when manifest globs match ineligible files. |
-
-Extensions normalize to leading-dot lowercase values and are compared case-insensitively. Wildcards and path separators are invalid in extension lists.
+- [Manifest guide](doc-metadata-manifest.md)
+- [Document metadata overview](README.md)
