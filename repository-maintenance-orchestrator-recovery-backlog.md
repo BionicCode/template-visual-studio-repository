@@ -1,5 +1,7 @@
 # Repository Maintenance Orchestrator Recovery Backlog
 
+This document is not an instruction file for coding agents. All agents like Codex or Copilot must ignore this file and under no circumstances edit it.
+
 This document tracks recovery and follow-up work after restoring the repository to the `ff13d50`-based orchestrator baseline.
 
 It replaces the earlier regression-fix backlog that was written during the failed Sonnet/Codex repair attempts. Some lessons from those attempts remain useful, but they are no longer assumed to describe the current repository state.
@@ -67,32 +69,32 @@ This pass is primarily review and validation. It may produce no code changes. If
 
 **Completion checklist**
 
-- [ ] Confirm repository content was restored to the intended `ff13d50` baseline or a deliberate follow-up commit on top of that baseline.
-- [ ] Confirm no temporary diagnostic files exist, especially under `.github/scripts/doc-metadata/tests/`.
-- [ ] Confirm root-level planning prompt files are either intentionally kept or removed in a separate cleanup commit.
-- [ ] Inspect `AGENTS.md` and repository review protocol before reviewing implementation.
-- [ ] Confirm `.github/workflows/repository-maintenance.yml` exists.
-- [ ] Confirm `.github/workflows/doc-metadata.yml` exists.
-- [ ] Confirm `.github/workflows/sync-managed-files.yml` exists.
-- [ ] Confirm `repository-maintenance.yml` owns normal `pull_request`, `push`, `schedule`, and `workflow_dispatch` entry points.
-- [ ] Confirm `doc-metadata.yml` has only `workflow_call` and `workflow_dispatch` triggers.
-- [ ] Confirm `sync-managed-files.yml` has only `workflow_call` and `workflow_dispatch` triggers.
-- [ ] Confirm repository-maintenance calls doc-metadata before sync-managed-files.
-- [ ] Confirm sync-managed-files is the final maintenance child workflow.
-- [ ] Confirm the sync guard allows sync when doc-metadata is out of scope.
-- [ ] Confirm the sync guard allows sync after doc-metadata succeeds.
-- [ ] Confirm the sync guard does not allow sync when doc-metadata was expected but skipped, failed, or cancelled.
-- [ ] Confirm schedule ownership is centralized in `repository-maintenance.yml`, not in child workflows.
-- [ ] Confirm branch/tag guards prevent tag pushes from satisfying branch-based maintenance conditions.
-- [ ] Confirm direct/manual dispatch guards use branch context where needed.
-- [ ] Confirm `sync-managed-files.yml` still delegates to `BionicCode/workflows/.github/workflows/sync-files-from-manifest.yml@main`.
-- [ ] Confirm no PowerShell engine scripts were changed as part of the restored orchestration baseline.
-- [ ] Confirm no manifests or schemas were changed as part of the restored orchestration baseline.
-- [ ] Run YAML validation for all workflow files.
-- [ ] Run PowerShell parser validation for doc-metadata scripts and tests.
-- [ ] Run doc-metadata acceptance tests locally.
-- [ ] Review the acceptance test suite itself for stale workflow-shape assertions or weak fixtures.
-- [ ] Report any failing test as either baseline-blocking or clearly out of scope.
+- [x] Confirm repository content was restored to the intended `ff13d50` baseline or a deliberate follow-up commit on top of that baseline.
+- [x] Confirm no temporary diagnostic files exist, especially under `.github/scripts/doc-metadata/tests/`.
+- [x] Confirm root-level planning prompt files are either intentionally kept or removed in a separate cleanup commit.
+- [x] Inspect `AGENTS.md` and repository review protocol before reviewing implementation.
+- [x] Confirm `.github/workflows/repository-maintenance.yml` exists.
+- [x] Confirm `.github/workflows/doc-metadata.yml` exists.
+- [x] Confirm `.github/workflows/sync-managed-files.yml` exists.
+- [x] Confirm `repository-maintenance.yml` owns normal `pull_request`, `push`, `schedule`, and `workflow_dispatch` entry points.
+- [x] Confirm `doc-metadata.yml` has only `workflow_call` and `workflow_dispatch` triggers.
+- [x] Confirm `sync-managed-files.yml` has only `workflow_call` and `workflow_dispatch` triggers.
+- [x] Confirm repository-maintenance calls doc-metadata before sync-managed-files.
+- [x] Confirm sync-managed-files is the final maintenance child workflow.
+- [x] Confirm the sync guard allows sync when doc-metadata is out of scope.
+- [x] Confirm the sync guard allows sync after doc-metadata succeeds.
+- [x] Confirm the sync guard does not allow sync when doc-metadata was expected but skipped, failed, or cancelled.
+- [x] Confirm schedule ownership is centralized in `repository-maintenance.yml`, not in child workflows.
+- [x] Confirm branch/tag guards prevent tag pushes from satisfying branch-based maintenance conditions.
+- [x] Confirm direct/manual dispatch guards use branch context where needed.
+- [x] Confirm `sync-managed-files.yml` still delegates to `BionicCode/workflows/.github/workflows/sync-files-from-manifest.yml@main`.
+- [x] Confirm no PowerShell engine scripts were changed as part of the restored orchestration baseline.
+- [x] Confirm no manifests or schemas were changed as part of the restored orchestration baseline.
+- [x] Run YAML validation for all workflow files.
+- [x] Run PowerShell parser validation for doc-metadata scripts and tests.
+- [x] Run doc-metadata acceptance tests locally.
+- [x] Review the acceptance test suite itself for stale workflow-shape assertions or weak fixtures.
+- [x] Report any failing test as either baseline-blocking or clearly out of scope.
 
 **Out of scope for this pass**
 
@@ -130,6 +132,9 @@ This pass is primarily review and validation. It may produce no code changes. If
 - [ ] Relevant acceptance tests still pass.
 - [ ] Changed files are reported.
 
+>[!IMPORTANT]
+> No issues found  in P0-A
+
 ---
 
 ### P1-A — Verify real repository-maintenance workflow execution
@@ -138,18 +143,18 @@ This pass is primarily review and validation. It may produce no code changes. If
 
 **Completion checklist**
 
-- [ ] `Repository maintenance` starts from `workflow_dispatch` on the default branch.
-- [ ] `Repository maintenance` starts from a pull request.
-- [ ] `Repository maintenance` starts from a push to the default branch.
-- [ ] Scheduled trigger is present and owned by `repository-maintenance.yml`.
-- [ ] Doc-metadata child workflow is invoked when in scope.
-- [ ] Sync child workflow is invoked after doc-metadata succeeds.
-- [ ] Sync child workflow is invoked when doc-metadata is intentionally out of scope.
-- [ ] Sync child workflow is not invoked when doc-metadata was expected but failed, skipped, or cancelled.
-- [ ] Bot repair branch creation/update still works.
-- [ ] `doc-metadata-repair-paths.txt` is written to runner temp, not to the repository checkout.
-- [ ] `git ls-remote` output for repair branch push is parsed safely before `--force-with-lease`.
-- [ ] Any failure is investigated from job logs before changing workflow semantics.
+- [x] `Repository maintenance` starts from `workflow_dispatch` on the default branch.
+- [x] `Repository maintenance` starts from a pull request.
+- [x] `Repository maintenance` starts from a push to the default branch.
+- [x] Scheduled trigger is present and owned by `repository-maintenance.yml`.
+- [x] Doc-metadata child workflow is invoked when in scope.
+- [x] Sync child workflow is invoked after doc-metadata succeeds.
+- [x] Sync child workflow is invoked when doc-metadata is intentionally out of scope.
+- [x] Sync child workflow is not invoked when doc-metadata was expected but failed, skipped, or cancelled.
+- [x] Bot repair branch creation/update still works.
+- [x] `doc-metadata-repair-paths.txt` is written to runner temp, not to the repository checkout.
+- [x] `git ls-remote` output for repair branch push is parsed safely before `--force-with-lease`.
+- [x] Any failure is investigated from job logs before changing workflow semantics.
 
 ---
 
@@ -197,18 +202,18 @@ Workflow-output documentation should live with workflow documentation, not manif
 
 **Completion checklist**
 
-- [ ] Inventory all doc-metadata documentation files and classify them as concept, workflow, manifest object reference, field/value reference, or obsolete/redundant.
-- [ ] Verify whether the documented JSON report is implemented by `update-doc-metadata.ps1` and/or consumed by `.github/workflows/doc-metadata.yml`.
-- [ ] Decide whether `report-analysis.md` should be kept, moved next to workflow documentation, rewritten, or deleted.
-- [ ] Decide whether `manifest-document.md` should be rewritten as a real object reference or deleted as redundant.
-- [ ] Add or plan dedicated reference pages for `exclude` and `presentation`.
-- [ ] Rewrite or plan `metadata-settings.md` as a proper object page with field links.
-- [ ] Add or plan dedicated field/value pages for all metadata fields, including `format`, `placement`, `versionField`, `createdField`, `updatedField`, `authorField`, `versioningMode`, `timestampFormat`, `commentStart`, `commentLinePrefix`, and `commentEnd`.
-- [ ] Add or plan dedicated field/value pages for all presentation fields, including `enabled`, `historyLimit`, `includeSeparator`, and `spacingBreaks`.
-- [ ] Verify that docs do not claim unsupported behavior or stale implementation details.
-- [ ] Verify that examples match the current schema and intended convention-based governance model.
-- [ ] Verify all relative links after any move/delete/rename.
-- [ ] Do not edit PowerShell behavior, workflow behavior, manifests, or schemas during this documentation-only pass unless the user explicitly opens a separate implementation task.
+- [x] Inventory all doc-metadata documentation files and classify them as concept, workflow, manifest object reference, field/value reference, or obsolete/redundant.
+- [x] Verify whether the documented JSON report is implemented by `update-doc-metadata.ps1` and/or consumed by `.github/workflows/doc-metadata.yml`.
+- [x] Decide whether `report-analysis.md` should be kept, moved next to workflow documentation, rewritten, or deleted.
+- [x] Decide whether `manifest-document.md` should be rewritten as a real object reference or deleted as redundant.
+- [x] Add or plan dedicated reference pages for `exclude` and `presentation`.
+- [x] Rewrite or plan `metadata-settings.md` as a proper object page with field links.
+- [x] Add or plan dedicated field/value pages for all metadata fields, including `format`, `placement`, `versionField`, `createdField`, `updatedField`, `authorField`, `versioningMode`, `timestampFormat`, `commentStart`, `commentLinePrefix`, and `commentEnd`.
+- [x] Add or plan dedicated field/value pages for all presentation fields, including `enabled`, `historyLimit`, `includeSeparator`, and `spacingBreaks`.
+- [x] Verify that docs do not claim unsupported behavior or stale implementation details.
+- [x] Verify that examples match the current schema and intended convention-based governance model.
+- [x] Verify all relative links after any move/delete/rename.
+- [x] Do not edit PowerShell behavior, workflow behavior, manifests, or schemas during this documentation-only pass unless the user explicitly opens a separate implementation task.
 
 ---
 

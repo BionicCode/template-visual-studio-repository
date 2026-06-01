@@ -1,6 +1,6 @@
 # Repository Review Protocol
 
-This document is not an instruction file for coding agents. All agents like Codex or Copilot must ignore this file and under no circumstance edit it.
+This document is not an instruction file for coding agents. All agents like Codex or Copilot must ignore this file and under no circumstances edit it.
 
 Audience:
 - Human maintainer
