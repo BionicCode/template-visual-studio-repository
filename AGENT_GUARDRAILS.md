@@ -23,7 +23,7 @@ Version: x
 
 ## Purpose
 
-This file defines cross-repository guardrails for coding agents working in repositories derived from `template-visual-studio-repository`.
+This file defines cross-repository guardrails for coding agents working in repositories.
 
 Use this file together with:
 
@@ -74,7 +74,7 @@ When modifying these files:
 - keep repository-specific edits inside designated repository-specific sections or nested files;
 - do not remove marker fences unless explicitly requested;
 - keep mirrored or derived instruction files synchronized when the repository owns the copy;
-- report which instruction surfaces changed and why.
+- prominently report which instruction surfaces changed and why.
 
 ## Public contract consistency
 
