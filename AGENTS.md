@@ -36,7 +36,9 @@ For implementation tasks that touch public contracts, repository infrastructure,
 - More specific `AGENTS.md` or `AGENTS.override.md` files in deeper directories may refine or override repository-level guidance for files under their directory.
 - Keep this file concise, practical, and repository-agnostic. Repository-specific conventions belong only in the `Repository Specifics` section.
 - If repository-specific instructions conflict with the stable baseline above `Repository Specifics`, follow the more specific instruction only when it is safe and does not weaken validation, review, or correctness requirements.
-- If the user prompt is exactly `<review>`, treat it as a placeholder that expands to the task defined in the `Default Review Mission` section below.
+- If the user prompt is exactly `<review>`, treat it as a placeholder
+that invokes the review task and rules defined in the `Code Review Rules`
+section below.
 
 ## Core Engineering Standards
 - Favor correctness, readability, testability, and explicit boundaries over minimizing file count or type count.
@@ -193,7 +195,7 @@ If documentation was not updated, explicitly state why it was not needed.
 
 Follow the detailed documentation rules in `DOCUMENTATION.md` when that file exists.
 
-## Default Review Mission
+## Code Review Rules
 Goal: perform a deep, evidence-based code review focused on correctness, behavioral risk, contract mismatches, and maintainability.
 
 If the user does not provide review scope:
