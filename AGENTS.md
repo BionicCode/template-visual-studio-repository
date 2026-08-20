@@ -17,7 +17,7 @@ Author: BionicCode
 <br>
 <!-- doc-metadata-presentation:end -->
 
-# AGENTS.md (Version 3.2)
+# AGENTS.md (Version 3.3)
 
 <!--
 Shared baseline instructions for repositories using coding agents.
