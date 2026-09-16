@@ -1,13 +1,7 @@
 {
-	"folders": [
-		{
-			"path": "."
-		}
-	],
-	"settings": {
-		"chat.tools.terminal.autoApprove": {
-			".github/workflows/doc-metadata.yml": true
-		},
-		"github.copilot.chat.agent.autoFix": true
-	}
+    "folders": [
+        {
+            "path": "."
+        }
+    ]
 }
