@@ -17,7 +17,7 @@ Author: BionicCode
 <br>
 <!-- doc-metadata-presentation:end -->
 
-# AGENTS.md (Version 3.3)
+# AGENTS.md (Version 3.4)
 
 <!--
 Shared baseline instructions for repositories using coding agents.
@@ -67,7 +67,7 @@ section below.
 Use this mode when the user asks for review, analysis, root-cause investigation, design feedback, or uses `<review>`.
 
 In review-only mode:
-- Do not modify files unless the user asks.
+- Do not modify source, test, configuration, or documentation files unless the user asks. A code-review task may update .agent/REVIEW.md as specified by the Review Backlog rules.
 - Do not run builds, tests, or formatters unless the user asks.
 - Prefer static reasoning and code inspection.
 - Trace real call paths when code behavior matters; do not infer behavior from naming alone when tracing can verify it.
@@ -226,11 +226,20 @@ Prioritize findings in this order:
 - If a finding depends on framework or library API semantics that are not proven by the local code alone, verify that behavior from trusted documentation, runtime evidence, or other repository-local proof before labeling the finding as `[BUG]`; otherwise report it as `[RISK]` or stop with uncertainty.
 
 ### Review Output Format
+
 Organize the review by file.
+
+Each actionable finding must have a backlog-stable identifier of the form `RNN`,
+where `NN` is a decimal sequence number padded to at least two digits
+(`R01`, `R02`, …, `R99`, `R100`, …). A new backlog begins with `R01`;
+an active backlog continues according to the Review Backlog rules below. Place the identifier before the primary category tag.
 
 For each file:
 - Use a file header with the filename.
 - Use 1-based line references in the format `[L123]`.
+- Format each actionable finding beginning with its identifier and one primary category, for example:
+  - `R01 [BUG] [L123] — <finding>`
+  - `R02 [DESIGN] [L45] — <finding>`
 - Tag each finding with one primary category:
   - `[ERROR]`
   - `[BUG]`
@@ -245,7 +254,10 @@ For each file:
 
 When useful, mention secondary impacts in the explanation, but keep one primary tag per finding.
 
+Finding identifiers are assigned only after the review findings themselves have been determined. Identifier assignment must not influence review scope, finding discovery, severity, or completeness.
+
 ### Required Review Sections
+
 Include these sections in this order:
 1. `Scope / Entry Points`
 2. `Call-tree`
@@ -253,9 +265,25 @@ Include these sections in this order:
 4. `Coverage / Call-tree traversal depth`
 
 ### Stop / Uncertainty Rules
+
 - If you cannot fully verify a path, stop and explicitly say where verification stopped.
 - Do not present an assumption as a confirmed defect.
 - State why verification stopped: missing file, generated code, unclear runtime behavior, unresolved dynamic dispatch, external dependency, insufficient context, or command execution not requested.
+
+### Review Backlog
+
+After completing a code review and determining all findings, read [`.agent/REVIEW.md`](.agent/REVIEW.md) and reconcile the review identifiers with its `Log` before producing the final review response.
+
+- Do not consult `REVIEW.md` when determining review scope, findings, severity, or completeness.
+- Use the same `RNN` identifier for a finding in both the review report and `REVIEW.md`.
+- If a current finding matches an existing unchecked backlog entry, preserve and reuse that entry's identifier.
+- Assign identifiers for new findings according to the allocation rules defined in `REVIEW.md`.
+- Never change an existing backlog identifier merely to make numbering continuous.
+- References such as `R03` refer to the current state of `REVIEW.md` unless the user explicitly identifies an earlier review or report.
+- After identifier reconciliation, update the `Log` according to the maintenance rules defined in `REVIEW.md`.
+- If `REVIEW.md` is unavailable, the review report remains valid independently: assign current findings consecutively beginning with `R01` and report that the backlog could not be updated.
+- The normal final response must still follow the complete review-output contract above.
+- During implementation tasks, do not read, use, or modify `REVIEW.md` unless the user explicitly requests it.
 
 ## Implementation Completion Report
 For every implementation task, finish with a concise Markdown report that can stand alone as a handoff without requiring the full task transcript.
