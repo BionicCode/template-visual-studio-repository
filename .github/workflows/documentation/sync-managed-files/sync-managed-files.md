@@ -1,11 +1,11 @@
 # Sync managed files
 
 > [!NOTE]
-> See [tool documentation](../../tools/sync-config/documentation/sync-manifest.md) for detailed information about configuration using the manifest.
+> See [tool documentation](../../../tools/sync-config/documentation/sync-manifest.md) for detailed information about configuration using the manifest.
 
 ## Purpose
 
-[sync-managed-files.yml](../sync-managed-files.yml) inspects the local sync manifest and delegates managed-file initialization or synchronization to the shared reusable workflow in `BionicCode/workflows`.
+[sync-managed-files.yml](../../sync-managed-files.yml) inspects the local sync manifest and delegates managed-file initialization or synchronization to the shared reusable workflow in `BionicCode/workflows`.
 
 ## When it runs
 
@@ -15,7 +15,7 @@
 | `workflow_dispatch` | Passive/reusable with direct manual entry | Available for targeted manual execution when maintainers intentionally want to run the wrapper directly. |
 
 > [!NOTE]
-> Normal schedule, push, pull-request, and manual orchestration is owned by [Repository maintenance](repository-maintenance.md).
+> Normal schedule, push, pull-request, and manual orchestration is owned by [Repository maintenance](../repository-maintenance/repository-maintenance.md).
 
 ## Workflow role
 
@@ -75,6 +75,25 @@ This workflow currently defines no custom manual-dispatch inputs.
 - Sync still forwards the required secret to the shared workflow where the local wrapper currently uses it.
 - Direct `workflow_dispatch` default-branch checks are branch-only and do not treat tag refs as eligible manual maintenance context.
 
+## Instruction package ownership
+
+The manifest explicitly distributes the seven canonical files under
+`.agent/instructions/` as `enforce`, `whole_file`, followed by the seed files and
+thin compatibility bridges. Existing bridge entries retain `outside_markers` and
+the repository-specific fences; `test/AGENTS.md` uses the same protection. Root
+`AGENTS.md` is last among instruction entry points.
+
+`.agent/REPOSITORY.md`, `.agent/REVIEW.md`, and `CLAUDE.md` use `seed_once`,
+`whole_file`. Missing files receive their initial template contents. Existing
+files remain untouched, including the mutable review Log and downstream Claude
+customizations. There is no broad `.agent/` distribution glob.
+
+The [architecture contract](../../../../docs/agent-instruction-architecture.md)
+describes routing, ownership, verification, and rollout limits. Publishing the
+complete template package and updating consumer manifests are separate rollout
+steps. The existing manifest initializer does not upgrade existing consumer
+manifests, and this local change does not establish downstream adoption.
+
 > [!IMPORTANT]
 > Keep the local wrapper role intact. Do not inline the shared workflow logic here unless that architecture is intentionally being changed.
 
@@ -83,9 +102,9 @@ This workflow currently defines no custom manual-dispatch inputs.
 
 ## Related workflows
 
-- [Repository maintenance](repository-maintenance.md)
-- [Document metadata](doc-metadata.md)
-- [sync-managed-files.yml](../sync-managed-files.yml)
+- [Repository maintenance](../repository-maintenance/repository-maintenance.md)
+- [Document metadata](../doc-metadata/doc-metadata.md)
+- [sync-managed-files.yml](../../sync-managed-files.yml)
 
 ## Maintenance notes
 

@@ -859,10 +859,33 @@ Invoke-Test "Conflicting multiple include entries fail" {
     Assert-True ($result.Stdout -match "include configuration conflict") "Conflict should be reported."
 }
 
-Invoke-Test "Default exclude is empty and broad include plus exclude works" {
+Invoke-Test "Default excludes protect local agent configuration and review state" {
     $manifest = Read-JsonFile (Join-Path $PublicSurfaceSource "doc-metadata-manifest.json")
-    Assert-Equal 0 @($manifest.exclude).Count "Default manifest exclude should be empty."
+    Assert-Equal '.agent/REPOSITORY.md,.agent/REVIEW.md' (@($manifest.exclude | Sort-Object) -join ',') "Default manifest must protect repository-local configuration and human review state."
 
+    $root = New-TestRepository
+    $reviewPath = Join-Path $root '.agent/REVIEW.md'
+    $configurationPath = Join-Path $root '.agent/REPOSITORY.md'
+    Write-Utf8File -Path $reviewPath -Content "# Human review`r`n`r`n## Log`r`n- [ ] R17 [BUG] keep.cs [L42]`r`n"
+    Write-Utf8File -Path $configurationPath -Content "# Local settings`r`nSolution: ActualProduct.sln`r`n"
+    Write-Utf8File -Path (Join-Path $root '.agent/instructions/ENGINEERING.md') -Content "# Shared engineering`n"
+    $reviewBefore = [Convert]::ToHexString([System.IO.File]::ReadAllBytes($reviewPath))
+    $configurationBefore = [Convert]::ToHexString([System.IO.File]::ReadAllBytes($configurationPath))
+    $manifestPath = Join-Path $root '.github/tools/doc-metadata/doc-metadata-manifest.json'
+    $fixtureManifest = Read-JsonFile $manifestPath
+    $fixtureManifest.include = @('.agent/**/*.md')
+    $fixtureManifest.exclude = $manifest.exclude
+    $fixtureManifest | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
+
+    $result = Invoke-Tool -Root $root -Mode 'Bootstrap' -ExtraArguments @('-ReportOutputPath', 'report.json')
+
+    Assert-Equal 0 $result.ExitCode 'Broad agent-document metadata initialization should pass.'
+    Assert-Equal $reviewBefore ([Convert]::ToHexString([System.IO.File]::ReadAllBytes($reviewPath))) 'Metadata must preserve an existing review Log byte-for-byte.'
+    Assert-Equal $configurationBefore ([Convert]::ToHexString([System.IO.File]::ReadAllBytes($configurationPath))) 'Metadata must preserve local configuration byte-for-byte.'
+    Assert-True (@((Read-JsonFile (Join-Path $root 'report.json')).updatedFiles.path) -contains '.agent/instructions/ENGINEERING.md') 'Shared agent instructions must still receive metadata.'
+}
+
+Invoke-Test "Broad include plus exclude works" {
     $root = New-TestRepository
     Write-Utf8File -Path (Join-Path $root "docs\keep.md") -Content "# Keep`n"
     Write-Utf8File -Path (Join-Path $root "docs\skip.md") -Content "# Skip`n"

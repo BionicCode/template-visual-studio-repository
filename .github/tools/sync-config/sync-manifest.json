@@ -27,18 +27,124 @@
       "managed_scope": "whole_file"
     },
     {
-      "source_repo": "BionicCode/template-visual-studio-repository",
+      "source_repo": "BionicCode/bioniccode-code-style",
       "source_ref": "main",
-      "source_path": "AGENTS.md",
+      "source_path": ".editorconfig",
       "target_directory": "",
       "direction": "source_to_target",
       "lifecycle_policy": "enforce",
       "uniqueness_policy": "none",
-      "managed_scope": "outside_markers",
-      "markers": {
-        "start": "<!-- BEGIN REPOSITORY SPECIFICS -->",
-        "end": "<!-- END REPOSITORY SPECIFICS -->"
-      }
+      "managed_scope": "whole_file"
+    },
+    {
+      "source_repo": "BionicCode/bioniccode-code-style",
+      "source_ref": "main",
+      "source_path": "Directory.Build.props",
+      "target_directory": "",
+      "direction": "source_to_target",
+      "lifecycle_policy": "enforce",
+      "uniqueness_policy": "none",
+      "managed_scope": "whole_file"
+    },
+    {
+      "source_repo": "BionicCode/template-visual-studio-repository",
+      "source_ref": "main",
+      "source_path": ".agent/instructions/ENGINEERING.md",
+      "target_directory": ".agent/instructions/",
+      "direction": "source_to_target",
+      "lifecycle_policy": "enforce",
+      "uniqueness_policy": "none",
+      "managed_scope": "whole_file"
+    },
+    {
+      "source_repo": "BionicCode/template-visual-studio-repository",
+      "source_ref": "main",
+      "source_path": ".agent/instructions/IMPLEMENTATION.md",
+      "target_directory": ".agent/instructions/",
+      "direction": "source_to_target",
+      "lifecycle_policy": "enforce",
+      "uniqueness_policy": "none",
+      "managed_scope": "whole_file"
+    },
+    {
+      "source_repo": "BionicCode/template-visual-studio-repository",
+      "source_ref": "main",
+      "source_path": ".agent/instructions/CODE_REVIEW.md",
+      "target_directory": ".agent/instructions/",
+      "direction": "source_to_target",
+      "lifecycle_policy": "enforce",
+      "uniqueness_policy": "none",
+      "managed_scope": "whole_file"
+    },
+    {
+      "source_repo": "BionicCode/template-visual-studio-repository",
+      "source_ref": "main",
+      "source_path": ".agent/instructions/DOTNET.md",
+      "target_directory": ".agent/instructions/",
+      "direction": "source_to_target",
+      "lifecycle_policy": "enforce",
+      "uniqueness_policy": "none",
+      "managed_scope": "whole_file"
+    },
+    {
+      "source_repo": "BionicCode/template-visual-studio-repository",
+      "source_ref": "main",
+      "source_path": ".agent/instructions/TESTING.md",
+      "target_directory": ".agent/instructions/",
+      "direction": "source_to_target",
+      "lifecycle_policy": "enforce",
+      "uniqueness_policy": "none",
+      "managed_scope": "whole_file"
+    },
+    {
+      "source_repo": "BionicCode/template-visual-studio-repository",
+      "source_ref": "main",
+      "source_path": ".agent/instructions/GUARDRAILS.md",
+      "target_directory": ".agent/instructions/",
+      "direction": "source_to_target",
+      "lifecycle_policy": "enforce",
+      "uniqueness_policy": "none",
+      "managed_scope": "whole_file"
+    },
+    {
+      "source_repo": "BionicCode/template-visual-studio-repository",
+      "source_ref": "main",
+      "source_path": ".agent/instructions/DOCUMENTATION.md",
+      "target_directory": ".agent/instructions/",
+      "direction": "source_to_target",
+      "lifecycle_policy": "enforce",
+      "uniqueness_policy": "none",
+      "managed_scope": "whole_file"
+    },
+    {
+      "source_repo": "BionicCode/template-visual-studio-repository",
+      "source_ref": "main",
+      "source_path": ".agent/REPOSITORY.md",
+      "target_directory": ".agent/",
+      "direction": "source_to_target",
+      "lifecycle_policy": "seed_once",
+      "uniqueness_policy": "none",
+      "managed_scope": "whole_file"
+    },
+    {
+      "source_repo": "BionicCode/template-visual-studio-repository",
+      "source_ref": "main",
+      "source_path": ".agent/REVIEW.md",
+      "target_directory": ".agent/",
+      "direction": "source_to_target",
+      "lifecycle_policy": "seed_once",
+      "uniqueness_policy": "none",
+      "managed_scope": "whole_file"
+    },
+    {
+      "source_repo": "BionicCode/template-visual-studio-repository",
+      "source_ref": "main",
+      "source_path": "CLAUDE.md",
+      "target_directory": "",
+      "direction": "source_to_target",
+      "lifecycle_policy": "seed_once",
+      "uniqueness_policy": "none",
+      "managed_scope": "whole_file"
     },
     {
       "source_repo": "BionicCode/template-visual-studio-repository",
@@ -125,24 +231,32 @@
       }
     },
     {
-      "source_repo": "BionicCode/bioniccode-code-style",
+      "source_repo": "BionicCode/template-visual-studio-repository",
       "source_ref": "main",
-      "source_path": ".editorconfig",
-      "target_directory": "",
+      "source_path": "test/AGENTS.md",
+      "target_directory": "test/",
       "direction": "source_to_target",
       "lifecycle_policy": "enforce",
       "uniqueness_policy": "none",
-      "managed_scope": "whole_file"
+      "managed_scope": "outside_markers",
+      "markers": {
+        "start": "<!-- BEGIN REPOSITORY SPECIFICS -->",
+        "end": "<!-- END REPOSITORY SPECIFICS -->"
+      }
     },
     {
-      "source_repo": "BionicCode/bioniccode-code-style",
+      "source_repo": "BionicCode/template-visual-studio-repository",
       "source_ref": "main",
-      "source_path": "Directory.Build.props",
+      "source_path": "AGENTS.md",
       "target_directory": "",
       "direction": "source_to_target",
       "lifecycle_policy": "enforce",
       "uniqueness_policy": "none",
-      "managed_scope": "whole_file"
+      "managed_scope": "outside_markers",
+      "markers": {
+        "start": "<!-- BEGIN REPOSITORY SPECIFICS -->",
+        "end": "<!-- END REPOSITORY SPECIFICS -->"
+      }
     }
   ]
 }
